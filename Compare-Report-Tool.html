@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="id"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tool Compare Report PTR vs Prod</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f4f6f9; --panel:#ffffff; --panel2:#f8fafc; --line:#dde3ea;
+  --tx:#101722; --tx2:#556173; --tx3:#7d8899;
+  --ok:#0f7a4d; --okbg:#e7f7ee; --bad:#c0281f; --badbg:#fdecea;
+  --warn:#8a5a00; --warnbg:#fdf4e3; --ptr:#1a5fbf; --ptrbg:#e9f1fd;
+  --prod:#6a37b3; --prodbg:#f2ebfc; --accent:#1a5fbf; --mark:rgba(255,196,0,.42);
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"SFMono-Regular",Menlo,monospace;
+  --sans:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--sans);
+     font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1280px;margin:0 auto;padding:28px 20px 80px}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em;position:relative;padding-top:15px}
+h1::before{content:"";position:absolute;top:0;left:0;width:46px;height:3px;
+  background:var(--accent);border-radius:2px}
+.sub{color:var(--tx2);font-size:13px;margin-bottom:22px}
+h3.sec{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3);
+       margin:28px 0 10px;font-weight:600}
+
+/* ---------- drop zones ---------- */
+.zones{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.zone{border:2px dashed var(--line);border-radius:12px;background:var(--panel);padding:16px 18px;
+      transition:border-color .15s,background .15s}
+.zone.ptr{border-color:color-mix(in srgb,var(--ptr) 35%,var(--line))}
+.zone.prod{border-color:color-mix(in srgb,var(--prod) 35%,var(--line))}
+.zone.over{background:var(--panel2)}
+.zone.ptr.over{border-color:var(--ptr)} .zone.prod.over{border-color:var(--prod)}
+.zone h2{margin:0 0 2px;font-size:14px;letter-spacing:.02em}
+.zone.ptr h2{color:var(--ptr)} .zone.prod h2{color:var(--prod)}
+.zone .hint{font-size:12px;color:var(--tx3);margin-bottom:12px}
+.zbtns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{border:1px solid var(--line);background:var(--panel2);color:var(--tx);border-radius:8px;
+     padding:7px 14px;font-size:13px;font-family:inherit;cursor:pointer}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.primary:hover{color:#fff;opacity:.9}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:none;font-size:12px;padding:5px 10px}
+.zstat{margin-top:11px;font-size:12.5px;color:var(--tx2);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.zstat b{color:var(--tx)}
+.filelist{margin-top:9px;max-height:132px;overflow:auto;border:1px solid var(--line);
+      border-radius:8px;background:var(--bg);font-family:var(--mono);font-size:11px;padding:7px 9px}
+.filelist div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--tx2)}
+
+/* ---------- action bar ---------- */
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0 0}
+label.opt{font-size:12.5px;color:var(--tx2);display:flex;gap:6px;align-items:center}
+select,input[type=search]{border:1px solid var(--line);background:var(--panel);color:var(--tx);
+      border-radius:8px;padding:6px 11px;font-size:13px;font-family:inherit}
+select:focus,input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+input[type=search]{min-width:190px}
+.progress{margin-top:14px;display:none}
+.progress.on{display:block}
+.bar{height:6px;border-radius:4px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .12s linear}
+.ptxt{font-size:12px;color:var(--tx2);margin-top:6px;font-family:var(--mono);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- results ---------- */
+#results{display:none}
+#results.on{display:block}
+.verdict{margin:20px 0;border-radius:10px;padding:16px 18px;border:1px solid;display:flex;gap:14px;align-items:flex-start}
+.verdict.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+.verdict.ok{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.verdict.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.verdict .ic{font-size:22px;line-height:1.1}
+.verdict h2{margin:0 0 3px;font-size:16px}
+.verdict p{margin:0;font-size:13px;opacity:.92}
+.kpis{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:22px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--line);
+     border-radius:10px;padding:13px 14px}
+.kpi.ok{border-left-color:var(--ok)} .kpi.bad{border-left-color:var(--bad)}
+.kpi.warn{border-left-color:var(--warn)} .kpi.ptr{border-left-color:var(--ptr)}
+.kpi.prod{border-left-color:var(--prod)}
+.kpi .n{font-size:26px;font-weight:650;letter-spacing:-.02em;line-height:1.1}
+.kpi .l{font-size:11.5px;color:var(--tx2);margin-top:3px}
+.kpi.ok .n{color:var(--ok)} .kpi.bad .n{color:var(--bad)} .kpi.warn .n{color:var(--warn)}
+.kpi.ptr .n{color:var(--ptr)} .kpi.prod .n{color:var(--prod)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;
+      box-shadow:0 1px 2px rgba(16,23,34,.05)}
+.tbl-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+   color:var(--tx3);padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;
+   background:var(--panel2);position:sticky;top:0;z-index:2}
+td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--panel2)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fname{font-family:var(--mono);font-size:12px;word-break:break-all}
+.fdir{color:var(--tx3);font-size:11px}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;
+       white-space:nowrap;border:1px solid currentColor}
+.badge.ok{background:var(--okbg);color:var(--ok)}
+.badge.bad{background:var(--badbg);color:var(--bad)}
+.badge.warn{background:var(--warnbg);color:var(--warn)}
+.badge.ptr{background:var(--ptrbg);color:var(--ptr)}
+.badge.prod{background:var(--prodbg);color:var(--prod)}
+.ctrls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+.chip{border:1px solid var(--line);background:var(--panel);color:var(--tx2);border-radius:20px;
+      padding:5px 13px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.count{color:var(--tx3);font-size:12px;margin-left:auto}
+.rowbtn{background:none;border:1px solid var(--line);border-radius:6px;color:var(--tx2);
+        cursor:pointer;font-size:11px;padding:3px 9px;font-family:inherit;white-space:nowrap}
+.rowbtn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------- modal ---------- */
+.modal{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
+  background:rgba(16,23,34,.42);padding:20px}
+.modal[hidden]{display:none}
+.dlg{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  width:min(1180px,96vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 16px 44px rgba(16,23,34,.18)}
+.dlg-hd{display:flex;gap:12px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line);
+  background:var(--panel2)}
+.dlg-hd .t{font-family:var(--mono);font-size:13px;word-break:break-all;flex:1;min-width:0}
+.dlg-hd .t small{display:block;font-family:var(--sans);color:var(--tx3);font-size:11px}
+.dlg-x{background:none;border:1px solid var(--line);border-radius:7px;color:var(--tx2);cursor:pointer;
+  font-size:16px;line-height:1;padding:5px 10px;font-family:inherit}
+.dlg-x:hover{border-color:var(--accent);color:var(--accent)}
+#dlgBody{overflow:auto;min-height:0;flex:1}
+.detail-in{padding:14px 16px}
+.note{font-size:12.5px;color:var(--tx2);margin:0 0 10px}
+.dhead{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);
+       margin:14px 0 6px;font-weight:600}
+pre.code{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:7px;
+   padding:9px 11px;font-family:var(--mono);font-size:11.5px;line-height:1.55;overflow-x:auto;
+   white-space:pre;color:var(--tx)}
+.pair{border:1px solid var(--line);border-radius:7px;overflow:hidden;margin-bottom:7px}
+.pair .lbl{font-size:10.5px;font-weight:700;letter-spacing:.05em;padding:3px 9px;font-family:var(--sans)}
+.pair .p-ptr .lbl{background:var(--ptrbg);color:var(--ptr)}
+.pair .p-prod .lbl{background:var(--prodbg);color:var(--prod)}
+.pair pre{margin:0;padding:6px 9px;font-family:var(--mono);font-size:11.5px;white-space:pre;
+   overflow-x:auto;background:var(--panel);color:var(--tx)}
+.pair .p-prod{border-top:1px solid var(--line)}
+.lineno{font-size:11px;color:var(--tx3);margin:9px 0 3px;font-family:var(--mono)}
+.ctbl{border:1px solid var(--line);border-radius:7px;overflow-x:auto;margin-bottom:6px}
+.ctbl table{font-size:12px}
+.ctbl th{padding:7px 10px;position:static}
+.ctbl td{padding:6px 10px}
+.note.cbad{color:var(--bad)}
+.note.cbad b{font-family:var(--mono)}
+.uline{display:flex;border:1px solid var(--line);border-radius:6px;margin-bottom:5px;overflow:hidden}
+.uline .meta{flex:0 0 auto;min-width:96px;padding:6px 9px;background:var(--panel2);
+  border-right:1px solid var(--line);font-family:var(--mono);font-size:10.5px;color:var(--tx3);
+  white-space:nowrap;line-height:1.55}
+.uline .meta b{color:var(--accent)}
+.uline pre{flex:1;min-width:0;margin:0;padding:6px 9px;font-family:var(--mono);font-size:11.5px;
+  white-space:pre;overflow-x:auto;background:var(--panel);color:var(--tx)}
+mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
+.empty{padding:34px;text-align:center;color:var(--tx3);font-size:13px}
+footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
+</style>
+</head><body>
+
+<div class="wrap">
+  <h1>Tool Compare Report PTR vs Report Production</h1>
+  <div class="sub">Upload report dari kedua sisi &mdash; bisa 1 file, banyak file sekaligus, atau seluruh folder.
+    Semua proses berjalan di browser Anda; tidak ada data yang dikirim ke mana pun.</div>
+
+  <div class="zones">
+    <div class="zone ptr" id="zPtr">
+      <h2>1 &middot; Report PTR</h2>
+      <div class="hint">Tarik file/folder ke sini, atau pakai tombol di bawah.</div>
+      <div class="zbtns">
+        <button class="btn" data-pick="ptr-files">Pilih File</button>
+        <button class="btn" data-pick="ptr-dir">Pilih Folder</button>
+        <button class="btn ghost" data-clear="ptr">Kosongkan</button>
+      </div>
+      <input type="file" id="ptr-files" multiple hidden>
+      <input type="file" id="ptr-dir" webkitdirectory directory multiple hidden>
+      <div class="zstat" id="sPtr">Belum ada file.</div>
+      <div class="filelist" id="lPtr" hidden></div>
+    </div>
+
+    <div class="zone prod" id="zProd">
+      <h2>2 &middot; Report Production</h2>
+      <div class="hint">Tarik file/folder ke sini, atau pakai tombol di bawah.</div>
+      <div class="zbtns">
+        <button class="btn" data-pick="prod-files">Pilih File</button>
+        <button class="btn" data-pick="prod-dir">Pilih Folder</button>
+        <button class="btn ghost" data-clear="prod">Kosongkan</button>
+      </div>
+      <input type="file" id="prod-files" multiple hidden>
+      <input type="file" id="prod-dir" webkitdirectory directory multiple hidden>
+      <div class="zstat" id="sProd">Belum ada file.</div>
+      <div class="filelist" id="lProd" hidden></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn primary" id="run" disabled>Bandingkan</button>
+    <button class="btn" id="cancel" hidden>Batalkan</button>
+    <label class="opt">Rincian baris s/d
+      <select id="limit">
+        <option value="25">25 MB</option>
+        <option value="50">50 MB</option>
+        <option value="100" selected>100 MB</option>
+        <option value="250">250 MB</option>
+      </select>
+    </label>
+    <label class="opt"><input type="checkbox" id="optTrim" checked> Abaikan spasi di akhir baris</label>
+    <button class="btn ghost" id="csv" hidden>Unduh CSV</button>
+  </div>
+
+  <div class="progress" id="prog">
+    <div class="bar"><i id="barIn"></i></div>
+    <div class="ptxt" id="ptxt"></div>
+  </div>
+
+  <div id="results">
+    <div id="verdict"></div>
+    <div class="kpis" id="kpis"></div>
+
+    <h3 class="sec">Ringkasan per folder</h3>
+    <div class="card tbl-scroll"><table id="byFolder"></table></div>
+
+    <h3 class="sec">Rincian per file</h3>
+    <div class="ctrls" id="filters"></div>
+    <div class="ctrls">
+      <input type="search" id="q" placeholder="Cari nama file / kode bank (mis. BRI)">
+      <select id="folderSel"></select>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="card tbl-scroll"><table id="main"></table></div>
+  </div>
+
+  <footer>Perbandingan dilakukan sepenuhnya di browser (offline). Berkas asli tidak diubah.</footer>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <div class="dlg-hd">
+      <div class="t" id="dlgTitle"></div>
+      <span id="dlgBadge"></span>
+      <button class="dlg-x" id="dlgClose" aria-label="Tutup">&times;</button>
+    </div>
+    <div id="dlgBody"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+var SAMPLE_POS = 25, SAMPLE_UNIQ = 15, LINE_TRUNC = 400;
+var SM = {
+  IDENTIK:['Identik','ok'], BEDA_FORMAT:['Beda format baris','warn'],
+  BEDA_HEADER:['Beda header/jam','warn'],
+  BEDA_DATA:['BEDA DATA','bad'], HANYA_PTR:['Hanya di PTR','ptr'],
+  HANYA_PROD:['Hanya di Prod','prod']
+};
+var META_PAT = [
+  /^\s*F[HT]\s*\d+/, /\bHAL\s*:/, /\bTANGGAL\s*:/,
+  /\bKODE\s+(BANK|REPORT)\s*:/, /\bJAM\s*:/, /\bWAKTU\s+CETAK\b/
+];
+function isMeta(s){ for(var i=0;i<META_PAT.length;i++) if(META_PAT[i].test(s)) return true; return false; }
+
+function esc(s){ return String(s).replace(/[&<>]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+function nf(n){ return (n===null||n===undefined)?'–':n.toLocaleString('id-ID'); }
+function kb(n){ return n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB'; }
+function trunc(s){ return s.length>LINE_TRUNC ? s.slice(0,LINE_TRUNC)+' …' : s; }
+function relOf(f){ return (f.webkitRelativePath || f.name).replace(/\\/g,'/'); }
+function nameOf(f){ var p=relOf(f).split('/'); return p[p.length-1]; }
+function folderOf(f){ var p=relOf(f).split('/'); return p.length>1 ? p[p.length-2] : '(root)'; }
+
+/* ================= pemilihan file ================= */
+var picked = { ptr:[], prod:[] };
+
+function setFiles(side, files){
+  var seen={}, out=[];
+  files.forEach(function(f){
+    var k = relOf(f)+'|'+f.size;
+    if(!seen[k]){ seen[k]=1; out.push(f); }
+  });
+  picked[side] = out;
+  renderZone(side);
+}
+function addFiles(side, files){ setFiles(side, picked[side].concat(files)); }
+
+function renderZone(side){
+  var arr = picked[side];
+  var stat = document.getElementById(side==='ptr'?'sPtr':'sProd');
+  var list = document.getElementById(side==='ptr'?'lPtr':'lProd');
+  if(!arr.length){ stat.textContent='Belum ada file.'; list.hidden=true; list.innerHTML=''; }
+  else {
+    var total=0; arr.forEach(function(f){ total+=f.size; });
+    stat.innerHTML = '<b>'+arr.length+'</b> file &middot; <b>'+kb(total)+'</b>';
+    list.hidden=false;
+    list.innerHTML = arr.slice(0,400).map(function(f){ return '<div>'+esc(relOf(f))+'</div>'; }).join('')
+      + (arr.length>400 ? '<div>… dan '+(arr.length-400)+' file lain</div>' : '');
+  }
+  document.getElementById('run').disabled = !(picked.ptr.length && picked.prod.length);
+}
+
+document.addEventListener('click', function(e){
+  var p = e.target.closest('[data-pick]');
+  if(p){ document.getElementById(p.dataset.pick).click(); return; }
+  var c = e.target.closest('[data-clear]');
+  if(c){ setFiles(c.dataset.clear, []); }
+});
+['ptr-files','ptr-dir','prod-files','prod-dir'].forEach(function(id){
+  document.getElementById(id).addEventListener('change', function(e){
+    addFiles(id.split('-')[0], Array.prototype.slice.call(e.target.files));
+    e.target.value = '';
+  });
+});
+
+/* drag & drop, termasuk seluruh folder */
+function walkEntry(entry, prefix, out){
+  return new Promise(function(resolve){
+    if(entry.isFile){
+      entry.file(function(f){
+        try{ Object.defineProperty(f,'webkitRelativePath',{value:prefix+entry.name,configurable:true}); }
+        catch(err){}
+        out.push(f); resolve();
+      }, function(){ resolve(); });
+    } else if(entry.isDirectory){
+      var rd = entry.createReader(), all=[];
+      var readBatch = function(){
+        rd.readEntries(function(batch){
+          if(!batch.length){
+            var chain = Promise.resolve();
+            all.forEach(function(en){ chain = chain.then(function(){
+              return walkEntry(en, prefix+entry.name+'/', out); }); });
+            chain.then(resolve);
+          } else { all = all.concat(Array.prototype.slice.call(batch)); readBatch(); }
+        }, function(){ resolve(); });
+      };
+      readBatch();
+    } else resolve();
+  });
+}
+[['zPtr','ptr'],['zProd','prod']].forEach(function(z){
+  var el = document.getElementById(z[0]), side = z[1];
+  ['dragenter','dragover'].forEach(function(ev){
+    el.addEventListener(ev, function(e){ e.preventDefault(); el.classList.add('over'); });
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    el.addEventListener(ev, function(e){ e.preventDefault(); el.classList.remove('over'); });
+  });
+  el.addEventListener('drop', function(e){
+    var dt = e.dataTransfer, entries = [];
+    if(dt.items && dt.items.length && dt.items[0].webkitGetAsEntry){
+      for(var i=0;i<dt.items.length;i++){
+        var en = dt.items[i].webkitGetAsEntry();
+        if(en) entries.push(en);
+      }
+    }
+    if(entries.length){
+      var out=[], chain=Promise.resolve();
+      entries.forEach(function(en){ chain = chain.then(function(){ return walkEntry(en,'',out); }); });
+      chain.then(function(){ addFiles(side, out); });
+    } else {
+      addFiles(side, Array.prototype.slice.call(dt.files));
+    }
+  });
+});
+
+/* ================= mesin perbandingan ================= */
+var dec = null;
+try { dec = new TextDecoder('windows-1252'); } catch(err){ dec = new TextDecoder('iso-8859-1'); }
+
+function hashFile(file){
+  var CH = 4*1024*1024, off = 0, h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  function step(){
+    if(off >= file.size){
+      h1 = Math.imul(h1^(h1>>>16), 2246822507) ^ Math.imul(h2^(h2>>>13), 3266489909);
+      h2 = Math.imul(h2^(h2>>>16), 2246822507) ^ Math.imul(h1^(h1>>>13), 3266489909);
+      return Promise.resolve((4294967296*(2097151&h2)+(h1>>>0)));
+    }
+    var slice = file.slice(off, off+CH); off += CH;
+    return slice.arrayBuffer().then(function(buf){
+      var b = new Uint8Array(buf);
+      for(var i=0;i<b.length;i++){
+        h1 = Math.imul(h1 ^ b[i], 2654435761);
+        h2 = Math.imul(h2 ^ b[i], 1597334677);
+      }
+      return step();
+    });
+  }
+  return step();
+}
+
+function lineEnding(buf){
+  var b = new Uint8Array(buf), lf = 0, crlf = 0, i;
+  for(i=0;i<b.length;i++){
+    if(b[i] === 10){ lf++; if(i > 0 && b[i-1] === 13) crlf++; }
+  }
+  if(!lf) return '-';
+  if(!crlf) return 'LF';
+  return (crlf === lf) ? 'CRLF' : 'campuran (CRLF+LF)';
+}
+
+function splitLines(text, trim){
+  var arr = text.split('\n');
+  if(arr.length && arr[arr.length-1] === '') arr.pop();
+  for(var i=0;i<arr.length;i++){
+    arr[i] = trim ? arr[i].replace(/[\s﻿\xA0]+$/,'') : arr[i].replace(/\r$/,'');
+  }
+  return arr;
+}
+
+var RE_KODE = /KODE\s+REPORT\s*:\s*([0-9A-Za-z]+)\s*(.*)$/;
+
+/* Satu lintasan: kode report per baris, jumlah halaman per kode, dan judulnya. */
+function tidyTitle(t){
+  t = (t || '').replace(/\s*(TANGGAL|HAL)\s*:.*$/i, '').trim();
+  if(!t) return '';
+  if(/^(\S )(\S )+/.test(t))
+    return t.split(/\s{2,}/).map(function(w){ return w.replace(/\s+/g,''); }).join(' ');
+  return t.replace(/\s{2,}/g, ' ');
+}
+
+/* Judul section: dari baris KODE REPORT itu sendiri, kalau kosong ambil
+   baris pertama yang berisi di bawahnya (maksimal 4 baris ke bawah). */
+function titleFor(lines, i, inline){
+  var t = tidyTitle(inline), j, c;
+  if(t) return t;
+  for(j=i+1; j<lines.length && j<=i+4; j++){
+    c = lines[j].trim();
+    if(!c || /^[-=_*]+$/.test(c)) continue;
+    return tidyTitle(c);
+  }
+  return '';
+}
+
+function sectionScan(lines){
+  var sec = new Array(lines.length), pages = new Map(), titles = new Map();
+  var cur = '', i, m, c;
+  for(i=0;i<lines.length;i++){
+    m = RE_KODE.exec(lines[i]);
+    if(m){
+      cur = m[1].toUpperCase();
+      pages.set(cur, (pages.get(cur)||0)+1);
+      if(!titles.has(cur)) titles.set(cur, titleFor(lines, i, m[2]));
+    }
+    sec[i] = cur;
+  }
+  return {sec:sec, pages:pages, titles:titles};
+}
+
+/* Hanya kode yang benar-benar absen di satu sisi yang dihitung tidak cocok.
+   Selisih jumlah halaman dicatat terpisah - itu efek jumlah transaksi, bukan kode hilang. */
+function codeKey(c){
+  var m = /^(\d+)(.*)$/.exec(c || '');
+  return m ? (('000' + m[1]).slice(-4) + m[2]) : ('zzzz' + (c || ''));
+}
+
+function codeDiff(row, A, B){
+  var keys = [], out = [], pages = [], same = 0;
+  A.pages.forEach(function(v,k){ keys.push(k); });
+  B.pages.forEach(function(v,k){ if(keys.indexOf(k)<0) keys.push(k); });
+  keys.sort();
+  keys.forEach(function(k){
+    var a = A.pages.get(k)||0, b = B.pages.get(k)||0;
+    if(a && b){
+      same++;
+      if(a !== b) pages.push(k);
+    } else {
+      out.push({code:k, title:A.titles.get(k)||B.titles.get(k)||'',
+                status: b===0 ? 'HANYA_PTR' : 'HANYA_PROD'});
+    }
+  });
+  row.codes = out; row.codesSame = same; row.codesPages = pages;
+}
+
+function blankRow(name, folder){
+  return { name:name, name2:null, folder:folder, path:folder+'/'+name, codes:[], codesSame:0, codesPages:[], codeRows:[],
+    orderOnly:false,
+    eolPtr:null, eolProd:null,
+    sizePtr:null, sizeProd:null, linesPtr:null, linesProd:null,
+    onlyPtrRows:0, onlyProdRows:0, posDiff:0,
+    samplesPos:[], samplesPtr:[], samplesProd:[], status:'', note:'' };
+}
+
+function analyseText(row, ta, tb, trim){
+  var la = splitLines(ta, trim), lb = splitLines(tb, trim);
+  row.linesPtr = la.length; row.linesProd = lb.length;
+
+  var A = sectionScan(la), B = sectionScan(lb);
+  codeDiff(row, A, B);
+
+  var i, same = la.length === lb.length;
+  if(same){ for(i=0;i<la.length;i++){ if(la[i]!==lb[i]){ same=false; break; } } }
+  if(same){
+    row.status = 'BEDA_FORMAT';
+    row.note = 'Isi baris identik. Beda hanya pada spasi di akhir baris atau akhiran baris (CRLF vs LF).';
+    return;
+  }
+
+  var ca = new Map(), cb = new Map();
+  for(i=0;i<la.length;i++) ca.set(la[i], (ca.get(la[i])||0)+1);
+  for(i=0;i<lb.length;i++) cb.set(lb[i], (cb.get(lb[i])||0)+1);
+  var uA = new Map(), uB = new Map(), nA = 0, nB = 0;
+  ca.forEach(function(v,k){ var d = v - (cb.get(k)||0); if(d>0){ nA += d; uA.set(k,d); } });
+  cb.forEach(function(v,k){ var d = v - (ca.get(k)||0); if(d>0){ nB += d; uB.set(k,d); } });
+  row.onlyPtrRows = nA; row.onlyProdRows = nB;
+
+  /* Hanya pasangan yang benar-benar beda isi yang dicatat. Baris yang sekadar
+     bergeser posisinya - isinya tetap ada di sisi lain - dilewati. */
+  var n = Math.min(la.length, lb.length), pos = [], shifted = 0;
+  for(i=0;i<n;i++){
+    if(la[i] !== lb[i]){
+      shifted++;
+      if(uA.has(la[i]) || uB.has(lb[i])){
+        row.posDiff++;
+        if(pos.length < SAMPLE_POS)
+          pos.push({no:i+1, ptr:trunc(la[i]), prod:trunc(lb[i]), codeA:A.sec[i], codeB:B.sec[i]});
+      }
+    }
+  }
+  row.samplesPos = pos;
+
+  if(nA === 0 && nB === 0){
+    row.status = 'IDENTIK';
+    row.orderOnly = true;
+    row.note = 'Isi report cocok. Seluruh baris sama persis, hanya urutan barisnya '
+      + 'yang berbeda (' + nf(shifted) + ' posisi bergeser).';
+    return;
+  }
+
+  /* Rekap jumlah baris beda per kode report. Tiap baris unik dihitung pada
+     kode report tempat kemunculan pertamanya, sehingga totalnya persis sama
+     dengan angka 'baris hanya ada di ...' di atas. */
+  var byCode = new Map();
+  function tally(lines, uniq, sec, side){
+    var seen = new Set(), j, ln, e;
+    for(j=0;j<lines.length;j++){
+      ln = lines[j];
+      if(uniq.has(ln) && !seen.has(ln)){
+        seen.add(ln);
+        e = byCode.get(sec[j]);
+        if(!e){ e = {ptr:0, prod:0}; byCode.set(sec[j], e); }
+        e[side] += uniq.get(ln);
+      }
+    }
+  }
+  tally(la, uA, A.sec, 'ptr');
+  tally(lb, uB, B.sec, 'prod');
+
+  var absent = {};
+  row.codes.forEach(function(c){ absent[c.code] = c.status; });
+  var rowsOut = [];
+  byCode.forEach(function(v, code){
+    rowsOut.push({code:code, title:A.titles.get(code) || B.titles.get(code) || '',
+                  ptr:v.ptr, prod:v.prod, status:absent[code] || 'BEDA'});
+  });
+  rowsOut.sort(function(x,y){ var a=codeKey(x.code), b=codeKey(y.code);
+    return a<b ? -1 : a>b ? 1 : 0; });
+  row.codeRows = rowsOut;
+
+  /* Contoh baris unik: maksimal 2 per kode report supaya menyebar ke banyak
+     section, bukan menumpuk di section pertama saja. */
+  function pick(lines, uniq, sec){
+    var out = [], seen = new Set(), per = {}, j, c;
+    for(j=0;j<lines.length && out.length<SAMPLE_UNIQ;j++){
+      if(uniq.has(lines[j]) && !seen.has(lines[j])){
+        seen.add(lines[j]);
+        c = sec[j] || '-';
+        per[c] = (per[c] || 0) + 1;
+        if(per[c] <= 2) out.push({no:j+1, code:sec[j], text:trunc(lines[j])});
+      }
+    }
+    return out;
+  }
+  row.samplesPtr  = pick(la, uA, A.sec);
+  row.samplesProd = pick(lb, uB, B.sec);
+
+  var allMeta = true;
+  row.samplesPtr.concat(row.samplesProd).forEach(function(s){
+    if(!isMeta(s.text)) allMeta = false;
+  });
+  if(allMeta && nA <= row.samplesPtr.length && nB <= row.samplesProd.length){
+    row.status = 'BEDA_HEADER';
+    row.note = 'Beda hanya pada baris header/trailer (jam cetak, nomor halaman, atau jumlah record). '
+             + 'Baris data tidak berubah.';
+  } else {
+    row.status = 'BEDA_DATA';
+    row.note = 'Ada baris data yang isinya berbeda antara PTR dan Production.';
+  }
+}
+
+/* pasangkan file kedua sisi */
+function pairUp(a, b){
+  if(a.length === 1 && b.length === 1) return {pairs:[[a[0], b[0]]], onlyA:[], onlyB:[]};
+
+  function index(arr){
+    var m = new Map();
+    arr.forEach(function(f){
+      var k = nameOf(f).toLowerCase();
+      if(!m.has(k)) m.set(k, []);
+      m.get(k).push(f);
+    });
+    return m;
+  }
+  var ia = index(a), ib = index(b), pairs = [], onlyA = [], onlyB = [];
+  ia.forEach(function(la, k){
+    var lb = ib.get(k);
+    if(!lb){ la.forEach(function(f){ onlyA.push(f); }); return; }
+    if(la.length === 1 && lb.length === 1){ pairs.push([la[0], lb[0]]); ib.delete(k); return; }
+    // nama sama di beberapa folder: cocokkan lewat nama folder
+    var used = {};
+    la.forEach(function(f){
+      var j = -1;
+      for(var i=0;i<lb.length;i++){ if(!used[i] && folderOf(lb[i])===folderOf(f)){ j=i; break; } }
+      if(j<0) for(var i2=0;i2<lb.length;i2++){ if(!used[i2]){ j=i2; break; } }
+      if(j<0) onlyA.push(f); else { used[j]=1; pairs.push([f, lb[j]]); }
+    });
+    lb.forEach(function(f,i){ if(!used[i]) onlyB.push(f); });
+    ib.delete(k);
+  });
+  ib.forEach(function(lb){ lb.forEach(function(f){ onlyB.push(f); }); });
+  return {pairs:pairs, onlyA:onlyA, onlyB:onlyB};
+}
+
+var cancelled = false, rows = [];
+
+function compare(){
+  cancelled = false;
+  var limitMB = parseInt(document.getElementById('limit').value, 10);
+  var LIMIT = limitMB * 1024 * 1024;
+  var trim = document.getElementById('optTrim').checked;
+  var m = pairUp(picked.ptr, picked.prod);
+  rows = [];
+
+  m.onlyA.forEach(function(f){
+    var r = blankRow(nameOf(f), folderOf(f));
+    r.sizePtr = f.size; r.status = 'HANYA_PTR';
+    r.note = 'File ada di PTR tetapi tidak ada di Production.';
+    rows.push(r);
+  });
+  m.onlyB.forEach(function(f){
+    var r = blankRow(nameOf(f), folderOf(f));
+    r.sizeProd = f.size; r.status = 'HANYA_PROD';
+    r.note = 'File ada di Production tetapi tidak ada di PTR.';
+    rows.push(r);
+  });
+
+  var total = m.pairs.length, done = 0;
+  document.getElementById('prog').classList.add('on');
+  document.getElementById('run').disabled = true;
+  document.getElementById('cancel').hidden = false;
+  document.getElementById('results').classList.remove('on');
+
+  function tick(label){
+    document.getElementById('barIn').style.width = (total ? done/total*100 : 100) + '%';
+    document.getElementById('ptxt').textContent = done + '/' + total + '  ' + label;
+    return new Promise(function(res){ setTimeout(res, 0); });
+  }
+
+  function one(i){
+    if(cancelled || i >= total) return Promise.resolve();
+    var fa = m.pairs[i][0], fb = m.pairs[i][1];
+    var r = blankRow(nameOf(fa), folderOf(fa));
+    r.sizePtr = fa.size; r.sizeProd = fb.size;
+    if(nameOf(fb) !== nameOf(fa)) r.name2 = nameOf(fb);
+    r.path = relOf(fa) + ' ' + relOf(fb);
+
+    return tick(nameOf(fa)).then(function(){
+      if(fa.size !== fb.size) return false;
+      return Promise.all([hashFile(fa), hashFile(fb)]).then(function(h){ return h[0] === h[1]; });
+    }).then(function(identical){
+      if(identical){
+        r.status = 'IDENTIK'; r.note = 'Isi file sama persis.';
+        return;
+      }
+      if(Math.max(fa.size, fb.size) > LIMIT){
+        r.status = 'BEDA_DATA';
+        r.note = 'File melebihi batas rincian (' + limitMB + ' MB) sehingga tidak dianalisa per baris. '
+               + 'Isinya sudah dipastikan berbeda. Naikkan batas untuk melihat detailnya.';
+        return;
+      }
+      return Promise.all([fa.arrayBuffer(), fb.arrayBuffer()]).then(function(bufs){
+        r.eolPtr  = lineEnding(bufs[0]);
+        r.eolProd = lineEnding(bufs[1]);
+        var ta = dec.decode(bufs[0]), tb = dec.decode(bufs[1]);
+        bufs[0] = bufs[1] = null;
+        analyseText(r, ta, tb, trim);
+      });
+    }).then(function(){
+      rows.push(r); done++;
+      return one(i+1);
+    }).catch(function(err){
+      r.status = 'BEDA_DATA';
+      r.note = 'Gagal membaca file: ' + err;
+      rows.push(r); done++;
+      return one(i+1);
+    });
+  }
+
+  one(0).then(function(){
+    document.getElementById('barIn').style.width = '100%';
+    document.getElementById('ptxt').textContent = cancelled
+      ? 'Dibatalkan — menampilkan ' + rows.length + ' file yang sudah diproses.'
+      : 'Selesai — ' + rows.length + ' file diperiksa.';
+    document.getElementById('run').disabled = false;
+    document.getElementById('cancel').hidden = true;
+    document.getElementById('csv').hidden = false;
+    var order = {BEDA_DATA:0, HANYA_PTR:1, HANYA_PROD:2, BEDA_URUTAN:3,
+                 BEDA_HEADER:4, BEDA_FORMAT:5, IDENTIK:6};
+    rows.sort(function(x,y){
+      return (order[x.status]-order[y.status]) || (x.path<y.path?-1:x.path>y.path?1:0);
+    });
+    showResults();
+  });
+}
+
+document.getElementById('run').onclick = compare;
+document.getElementById('cancel').onclick = function(){ cancelled = true; };
+
+/* ================= tampilan hasil ================= */
+function cnt(s){ return rows.filter(function(r){ return r.status===s; }).length; }
+
+function showResults(){
+  document.getElementById('results').classList.add('on');
+
+  var nBad=cnt('BEDA_DATA'), nOnlyP=cnt('HANYA_PTR'), nOnlyD=cnt('HANYA_PROD');
+  var nSoft=cnt('BEDA_HEADER')+cnt('BEDA_FORMAT');
+var nOrder=rows.filter(function(r){ return r.orderOnly; }).length;
+var orderTxt = nOrder ? ' Termasuk <b>'+nOrder+'</b> file yang isinya sudah cocok dan '
+  + 'hanya berbeda urutan barisnya.' : '';
+  var blocking=nBad+nOnlyP+nOnlyD;
+  document.getElementById('verdict').innerHTML =
+    (blocking===0 && nSoft===0)
+    ? '<div class="verdict ok"><div class="ic">✓</div><div><h2>COCOK — Report PTR sama dengan Production</h2>'
+      + '<p>Seluruh ' + rows.length + ' file cocok.' + orderTxt + '</p></div></div>'
+    : '<div class="verdict ' + (blocking?'bad':'warn') + '"><div class="ic">' + (blocking?'✕':'!') + '</div><div>'
+      + '<h2>' + (blocking ? 'TIDAK COCOK — ' + blocking + ' file wajib ditindaklanjuti'
+                           : 'PERLU DICEK — ' + nSoft + ' file beda non-data') + '</h2>'
+      + '<p>' + nBad + ' file beda isi data &middot; ' + nOnlyP + ' file hanya ada di PTR &middot; '
+      + nOnlyD + ' file hanya ada di Production &middot; ' + nSoft
+      + ' file beda header/format saja &middot; ' + cnt('IDENTIK') + ' file sudah cocok.'
+      + orderTxt + '</p></div></div>';
+
+  var kpis=[['IDENTIK','Identik','ok'],['BEDA_DATA','Beda data','bad'],
+    ['BEDA_HEADER','Beda header/jam','warn'],
+    ['BEDA_FORMAT','Beda format baris','warn'],
+    ['HANYA_PTR','Hanya di PTR','ptr'],['HANYA_PROD','Hanya di Prod','prod']];
+  document.getElementById('kpis').innerHTML = kpis.map(function(k){
+    return '<div class="kpi '+k[2]+'"><div class="n">'+cnt(k[0])+'</div><div class="l">'+k[1]+'</div></div>';
+  }).join('');
+
+  folders = [];
+  rows.forEach(function(r){ if(folders.indexOf(r.folder)<0) folders.push(r.folder); });
+  folders.sort();
+  document.getElementById('byFolder').innerHTML =
+   '<thead><tr><th>Folder</th><th class="num">Total</th><th class="num">Identik</th>'
+   +'<th class="num">Beda data</th><th class="num">Beda header/format</th>'
+   +'<th class="num">Hanya PTR</th><th class="num">Hanya Prod</th></tr></thead><tbody>'
+   + folders.map(function(f){
+     var g=rows.filter(function(r){ return r.folder===f; });
+     var c=function(s){ return g.filter(function(r){ return r.status===s; }).length; };
+     var soft=c('BEDA_HEADER')+c('BEDA_FORMAT');
+     return '<tr><td class="fname">'+esc(f)+'</td><td class="num">'+g.length+'</td>'
+     +'<td class="num">'+c('IDENTIK')+'</td><td class="num">'+(c('BEDA_DATA')||'–')+'</td>'
+     +'<td class="num">'+(soft||'–')+'</td><td class="num">'+(c('HANYA_PTR')||'–')+'</td>'
+     +'<td class="num">'+(c('HANYA_PROD')||'–')+'</td></tr>';
+   }).join('')+'</tbody>';
+
+  var fdefs=[['ALL','Semua'],['BEDA_DATA','Beda data'],['HANYA_PTR','Hanya di PTR'],
+    ['HANYA_PROD','Hanya di Prod'],['BEDA_HEADER','Beda header'],
+    ['BEDA_FORMAT','Beda format'],['IDENTIK','Identik']];
+  fStatus='ALL'; fFolder='ALL';
+  document.getElementById('filters').innerHTML = fdefs.map(function(d){
+    var n = d[0]==='ALL'?rows.length:cnt(d[0]);
+    return '<button class="chip" data-v="'+d[0]+'" aria-pressed="'+(d[0]==='ALL')+'">'+d[1]+' ('+n+')</button>';
+  }).join('');
+  document.getElementById('folderSel').innerHTML =
+    '<option value="ALL">Semua folder</option>'+folders.map(function(f){
+      return '<option>'+esc(f)+'</option>'; }).join('');
+  render();
+  document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+var fStatus='ALL', fQ='', fFolder='ALL', folders=[], view=[];
+
+document.getElementById('filters').addEventListener('click', function(e){
+  var b=e.target.closest('.chip'); if(!b) return;
+  fStatus=b.dataset.v;
+  Array.prototype.forEach.call(document.querySelectorAll('#filters .chip'), function(x){
+    x.setAttribute('aria-pressed', x===b); });
+  render();
+});
+document.getElementById('folderSel').onchange=function(e){ fFolder=e.target.value; render(); };
+document.getElementById('q').oninput=function(e){ fQ=e.target.value.toLowerCase(); render(); };
+
+function hl(a,b){
+  a=a||''; b=b||'';
+  var m=Math.min(a.length,b.length), s=0, e=0;
+  while(s<m && a.charAt(s)===b.charAt(s)) s++;
+  while(e<m-s && a.charAt(a.length-1-e)===b.charAt(b.length-1-e)) e++;
+  function wrap(t){
+    return esc(t.slice(0,s))+'<mark>'+esc(t.slice(s,t.length-e))+'</mark>'+esc(t.slice(t.length-e));
+  }
+  return [wrap(a),wrap(b)];
+}
+
+function kodeTag(a,b){
+  a = a || ''; b = (b===undefined) ? a : (b||'');
+  if(!a && !b) return '';
+  if(a === b) return '  &middot;  KODE REPORT ' + esc(a);
+  return '  &middot;  KODE REPORT &mdash; PTR ' + esc(a||'-') + ' / PROD ' + esc(b||'-');
+}
+function ulines(list){
+  return list.map(function(s){
+    if(typeof s === 'string') s = {no:null, code:'', text:s};
+    var meta = (s.code ? '<b>' + esc(s.code) + '</b> ' : '') + (s.no ? 'br.' + s.no : '');
+    return '<div class="uline"><div class="meta">' + meta + '</div><pre>'
+      + esc(s.text) + '</pre></div>';
+  }).join('');
+}
+function detailHTML(r){
+  var h='<div class="detail-in"><p class="note">'+esc(r.note)+'</p>';
+  if(r.status==='HANYA_PTR'||r.status==='HANYA_PROD')
+    return h+'<p class="note">Ukuran: '+kb(r.status==='HANYA_PTR'?r.sizePtr:r.sizeProd)+'</p></div>';
+
+  if(r.onlyPtrRows || r.onlyProdRows)
+    h+='<p class="note"><b>'+nf(r.onlyPtrRows)+'</b> baris hanya ada di PTR &middot; <b>'
+      +nf(r.onlyProdRows)+'</b> baris hanya ada di Production</p>';
+
+  if(r.eolPtr && r.eolProd && r.eolPtr !== r.eolProd)
+    h+='<p class="note cbad">Akhiran baris berbeda: PTR memakai <b>'+esc(r.eolPtr)
+      +'</b>, Production memakai <b>'+esc(r.eolProd)+'</b>.</p>';
+
+  if(r.codes && r.codes.length){
+    var mp=[], md=[];
+    r.codes.forEach(function(c){
+      if(c.status==='HANYA_PTR') mp.push(c.code); else md.push(c.code);
+    });
+    if(md.length) h+='<p class="note cbad">Kode report tidak diproduksi di PTR: <b>'
+      +esc(md.join(', '))+'</b></p>';
+    if(mp.length) h+='<p class="note cbad">Kode report tidak ada di Production: <b>'
+      +esc(mp.join(', '))+'</b></p>';
+  } else if(r.codesSame){
+    h+='<p class="note">Seluruh <b>'+r.codesSame+'</b> kode report ada di kedua sisi'
+      + ((r.codesPages && r.codesPages.length)
+          ? '. Jumlah halaman berbeda pada <b>'+esc(r.codesPages.join(', '))
+            +'</b> - ini akibat jumlah transaksinya berbeda, bukan kode report yang hilang.'
+          : '.') + '</p>';
+  }
+
+
+  if(r.codeRows && r.codeRows.length){
+    h+='<div class="dhead">Perbedaan per kode report ('+r.codeRows.length+' kode terdampak)</div>'
+      +'<div class="ctbl"><table><thead><tr><th>Kode Report</th><th>Judul</th>'
+      +'<th class="num">Baris beda PTR</th><th class="num">Baris beda Prod</th>'
+      +'<th>Status</th></tr></thead><tbody>'
+      + r.codeRows.map(function(c){
+          var L = (c.status==='HANYA_PTR')  ? ['Hanya ada di PTR','ptr']
+                : (c.status==='HANYA_PROD') ? ['Tidak ada di PTR','prod']
+                : ['Beda isi','warn'];
+          return '<tr><td class="fname">'+esc(c.code||'(sebelum header)')+'</td>'
+           +'<td>'+esc(c.title||'-')+'</td>'
+           +'<td class="num">'+nf(c.ptr)+'</td><td class="num">'+nf(c.prod)+'</td>'
+           +'<td><span class="badge '+L[1]+'">'+L[0]+'</span></td></tr>';
+        }).join('')+'</tbody></table></div>';
+  }
+  if(r.samplesPos.length){
+    h+='<div class="dhead">Contoh baris yang isinya berbeda</div>';
+    r.samplesPos.forEach(function(s){
+      var p=hl(s.ptr,s.prod);
+      h+='<div class="lineno">baris '+s.no+kodeTag(s.codeA,s.codeB)+'</div><div class="pair">'
+       +'<div class="p-ptr"><div class="lbl">PTR</div><pre>'+p[0]+'</pre></div>'
+       +'<div class="p-prod"><div class="lbl">PROD</div><pre>'+p[1]+'</pre></div></div>';
+    });
+  }
+  if(r.samplesPtr.length)
+    h+='<div class="dhead">Baris yang hanya ada di PTR</div>'+ulines(r.samplesPtr);
+  if(r.samplesProd.length)
+    h+='<div class="dhead">Baris yang hanya ada di Production</div>'+ulines(r.samplesProd);
+  return h+'</div>';
+}
+
+var tbl=document.getElementById('main');
+function render(){
+  view = rows.filter(function(r){
+    return (fStatus==='ALL'||r.status===fStatus)
+        && (fFolder==='ALL'||r.folder===fFolder)
+        && (!fQ||r.path.toLowerCase().indexOf(fQ)>=0);
+  });
+  document.getElementById('count').textContent = view.length+' dari '+rows.length+' file';
+  if(!view.length){
+    tbl.innerHTML='<tbody><tr><td class="empty">Tidak ada file yang cocok.</td></tr></tbody>';
+    return;
+  }
+  tbl.innerHTML='<thead><tr><th>File</th><th>Status</th><th class="num">Ukuran PTR</th>'
+   +'<th class="num">Ukuran Prod</th><th class="num">Baris PTR</th><th class="num">Baris Prod</th>'
+   +'<th class="num">Baris beda</th><th></th></tr></thead><tbody>'
+   + view.map(function(r,i){
+      var sm=SM[r.status];
+      var dif = (r.onlyPtrRows || r.onlyProdRows)
+        ? nf(r.onlyPtrRows + r.onlyProdRows) : '–';
+      var sub = r.name2 ? esc(r.folder)+' &middot; Prod: '+esc(r.name2) : esc(r.folder);
+      if(r.orderOnly) sub += ' &middot; beda urutan baris';
+      return '<tr><td><div class="fname">'+esc(r.name)+'</div><div class="fdir">'+sub+'</div></td>'
+       +'<td><span class="badge '+sm[1]+'">'+sm[0]+'</span></td>'
+       +'<td class="num">'+(r.sizePtr!=null?kb(r.sizePtr):'–')+'</td>'
+       +'<td class="num">'+(r.sizeProd!=null?kb(r.sizeProd):'–')+'</td>'
+       +'<td class="num">'+nf(r.linesPtr)+'</td><td class="num">'+nf(r.linesProd)+'</td>'
+       +'<td class="num">'+dif+'</td>'
+       +'<td>'+(r.status==='IDENTIK'?'':'<button class="rowbtn" data-i="'+i+'">Detail</button>')+'</td></tr>';
+   }).join('')+'</tbody>';
+  Array.prototype.forEach.call(tbl.querySelectorAll('.rowbtn'), function(b){
+    b.onclick=function(){ openDlg(view[b.dataset.i]); };
+  });
+}
+
+var modal=document.getElementById('modal');
+function openDlg(r){
+  var sm=SM[r.status];
+  document.getElementById('dlgTitle').innerHTML = esc(r.name) + '<small>' + esc(r.folder)
+    + (r.name2 ? ' &middot; dibandingkan dengan ' + esc(r.name2) : '') + '</small>';
+  document.getElementById('dlgBadge').innerHTML='<span class="badge '+sm[1]+'">'+sm[0]+'</span>';
+  document.getElementById('dlgBody').innerHTML=detailHTML(r);
+  Array.prototype.forEach.call(document.querySelectorAll('#dlgBody .pair'), function(p){
+    var ps=p.querySelectorAll('pre'), lock=false;
+    Array.prototype.forEach.call(ps, function(el){
+      el.addEventListener('scroll', function(){
+        if(lock) return; lock=true;
+        Array.prototype.forEach.call(ps, function(o){ if(o!==el) o.scrollLeft=el.scrollLeft; });
+        lock=false;
+      });
+    });
+  });
+  modal.hidden=false;
+  document.body.style.overflow='hidden';
+}
+function closeDlg(){ modal.hidden=true; document.body.style.overflow=''; }
+document.getElementById('dlgClose').onclick=closeDlg;
+modal.onclick=function(e){ if(e.target===modal) closeDlg(); };
+document.addEventListener('keydown', function(e){ if(e.key==='Escape'&&!modal.hidden) closeDlg(); });
+
+/* ================= ekspor CSV ================= */
+document.getElementById('csv').onclick = function(){
+  var q = function(v){ return '"' + String(v==null?'':v).replace(/"/g,'""') + '"'; };
+  var lines = [['Folder','File','Status','Ukuran PTR','Ukuran Prod','Baris PTR','Baris Prod',
+                'Baris hanya di PTR','Baris hanya di Prod','Posisi baris beda','Keterangan'].map(q).join(';')];
+  rows.forEach(function(r){
+    lines.push([r.folder, r.name + (r.name2 ? ' <-> ' + r.name2 : ''), SM[r.status][0],
+      r.sizePtr, r.sizeProd, r.linesPtr, r.linesProd,
+      r.onlyPtrRows, r.onlyProdRows, r.posDiff, r.note].map(q).join(';'));
+  });
+  var blob = new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'compare-ptr-vs-prod.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+};
+
+})();
+</script>
+</body></html>

@@ -1,0 +1,31 @@
+# ---------------------------------------------------------------------------
+# JANGAN PERNAH commit data report.
+# Berkas report Fee Engine memuat data nasabah: nomor kartu, nomor rekening,
+# nama, dan nominal transaksi. Repositori ini hanya untuk kode programnya.
+# ---------------------------------------------------------------------------
+
+# folder data mentah
+Report */
+Prod MP/
+ClaimClearingOracle/
+NewRevenueHarian/
+NewRevenueHarianCashback/
+ReportHarian/
+RevenueHarian/
+
+# berkas report apa pun
+*.txt
+*.gz
+*.zip
+*.csv
+
+# hasil perbandingan (menanamkan cuplikan data asli)
+Compare-Report-PTR-vs-Prod.html
+compare-ptr-vs-prod.csv
+
+# lain-lain
+__pycache__/
+*.pyc
+.claude/
+.DS_Store
+Thumbs.db
