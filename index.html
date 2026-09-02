@@ -507,20 +507,8 @@ function analyseText(row, ta, tb, trim){
   cb.forEach(function(v,k){ var d = v - (ca.get(k)||0); if(d>0){ nB += d; uB.set(k,d); } });
   row.onlyPtrRows = nA; row.onlyProdRows = nB;
 
-  /* Hanya pasangan yang benar-benar beda isi yang dicatat. Baris yang sekadar
-     bergeser posisinya - isinya tetap ada di sisi lain - dilewati. */
-  var n = Math.min(la.length, lb.length), pos = [], shifted = 0;
-  for(i=0;i<n;i++){
-    if(la[i] !== lb[i]){
-      shifted++;
-      if(uA.has(la[i]) || uB.has(lb[i])){
-        row.posDiff++;
-        if(pos.length < SAMPLE_POS)
-          pos.push({no:i+1, ptr:trunc(la[i]), prod:trunc(lb[i]), codeA:A.sec[i], codeB:B.sec[i]});
-      }
-    }
-  }
-  row.samplesPos = pos;
+  var n = Math.min(la.length, lb.length), shifted = 0;
+  for(i=0;i<n;i++) if(la[i] !== lb[i]) shifted++;
 
   if(nA === 0 && nB === 0){
     row.status = 'IDENTIK';
@@ -560,28 +548,58 @@ function analyseText(row, ta, tb, trim){
     return a<b ? -1 : a>b ? 1 : 0; });
   row.codeRows = rowsOut;
 
-  /* Contoh baris unik: maksimal 2 per kode report supaya menyebar ke banyak
-     section, bukan menumpuk di section pertama saja. */
-  function pick(lines, uniq, sec){
-    var out = [], seen = new Set(), per = {}, j, c;
-    for(j=0;j<lines.length && out.length<SAMPLE_UNIQ;j++){
-      if(uniq.has(lines[j]) && !seen.has(lines[j])){
-        seen.add(lines[j]);
-        c = sec[j] || '-';
+  /* Pasangkan baris beda lewat kunci isi (awal baris), bukan lewat posisi,
+     supaya transaksi yang sama yang disandingkan walau urutannya bergeser. */
+  var KEYLEN = 64;
+  function keyOf(t){
+    var k = t.slice(0, KEYLEN);
+    return (k.replace(/\s/g,'').length >= 12) ? k : null;
+  }
+  var idxB = new Map(), kb, j;
+  for(j=0;j<lb.length;j++){
+    if(uB.has(lb[j])){
+      kb = keyOf(lb[j]);
+      if(kb){ if(!idxB.has(kb)) idxB.set(kb, []); idxB.get(kb).push(j); }
+    }
+  }
+  var pos = [], usedB = new Set(), pairedA = new Set(), pairedB = new Set();
+  for(i=0;i<la.length && pos.length<SAMPLE_POS;i++){
+    if(!uA.has(la[i]) || pairedA.has(la[i])) continue;
+    var ka = keyOf(la[i]);
+    if(!ka || !idxB.has(ka)) continue;
+    var cand = idxB.get(ka), hit = -1, t;
+    for(t=0;t<cand.length;t++){ if(!usedB.has(cand[t])){ hit = cand[t]; break; } }
+    if(hit < 0) continue;
+    usedB.add(hit); pairedA.add(la[i]); pairedB.add(lb[hit]);
+    pos.push({no:i+1, noProd:hit+1, ptr:trunc(la[i]), prod:trunc(lb[hit]),
+              codeA:A.sec[i], codeB:B.sec[hit]});
+  }
+  row.samplesPos = pos;
+  row.posDiff = pos.length;
+
+  /* Sisanya - baris yang benar-benar tidak punya pasangan di sisi lain.
+     Maksimal 2 per kode report supaya menyebar ke banyak section. */
+  function pick(lines, uniq, sec, already){
+    var out = [], seen = new Set(), per = {}, k, c;
+    for(k=0;k<lines.length && out.length<SAMPLE_UNIQ;k++){
+      if(uniq.has(lines[k]) && !seen.has(lines[k]) && !already.has(lines[k])){
+        seen.add(lines[k]);
+        c = sec[k] || '-';
         per[c] = (per[c] || 0) + 1;
-        if(per[c] <= 2) out.push({no:j+1, code:sec[j], text:trunc(lines[j])});
+        if(per[c] <= 2) out.push({no:k+1, code:sec[k], text:trunc(lines[k])});
       }
     }
     return out;
   }
-  row.samplesPtr  = pick(la, uA, A.sec);
-  row.samplesProd = pick(lb, uB, B.sec);
+  row.samplesPtr  = pick(la, uA, A.sec, pairedA);
+  row.samplesProd = pick(lb, uB, B.sec, pairedB);
 
   var allMeta = true;
+  row.samplesPos.forEach(function(s){ if(!isMeta(s.ptr) || !isMeta(s.prod)) allMeta = false; });
   row.samplesPtr.concat(row.samplesProd).forEach(function(s){
     if(!isMeta(s.text)) allMeta = false;
   });
-  if(allMeta && nA <= row.samplesPtr.length && nB <= row.samplesProd.length){
+  if(allMeta && nA <= SAMPLE_UNIQ && nB <= SAMPLE_UNIQ){
     row.status = 'BEDA_HEADER';
     row.note = 'Beda hanya pada baris header/trailer (jam cetak, nomor halaman, atau jumlah record). '
              + 'Baris data tidak berubah.';
@@ -867,18 +885,21 @@ function detailHTML(r){
         }).join('')+'</tbody></table></div>';
   }
   if(r.samplesPos.length){
-    h+='<div class="dhead">Contoh baris yang isinya berbeda</div>';
+    h+='<div class="dhead">Contoh baris yang isinya berbeda (transaksi yang sama, disandingkan)</div>';
     r.samplesPos.forEach(function(s){
       var p=hl(s.ptr,s.prod);
-      h+='<div class="lineno">baris '+s.no+kodeTag(s.codeA,s.codeB)+'</div><div class="pair">'
+      var lbl = s.noProd && s.noProd !== s.no
+        ? 'baris ' + s.no + ' (PTR) / ' + s.noProd + ' (PROD)'
+        : 'baris ' + s.no;
+      h+='<div class="lineno">'+lbl+kodeTag(s.codeA,s.codeB)+'</div><div class="pair">'
        +'<div class="p-ptr"><div class="lbl">PTR</div><pre>'+p[0]+'</pre></div>'
        +'<div class="p-prod"><div class="lbl">PROD</div><pre>'+p[1]+'</pre></div></div>';
     });
   }
   if(r.samplesPtr.length)
-    h+='<div class="dhead">Baris yang hanya ada di PTR</div>'+ulines(r.samplesPtr);
+    h+='<div class="dhead">Baris yang tidak punya pasangan di Production</div>'+ulines(r.samplesPtr);
   if(r.samplesProd.length)
-    h+='<div class="dhead">Baris yang hanya ada di Production</div>'+ulines(r.samplesProd);
+    h+='<div class="dhead">Baris yang tidak punya pasangan di PTR</div>'+ulines(r.samplesProd);
   return h+'</div>';
 }
 

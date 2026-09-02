@@ -140,14 +140,54 @@ def trunc(s):
     return s[:LINE_TRUNC] + ' ...' if len(s) > LINE_TRUNC else s
 
 
-def pick_unique(lines, uniq, sec):
-    """Contoh baris yang hanya ada di satu sisi, lengkap dengan nomor baris
-    dan kode report tempat baris itu berada."""
+KEYLEN = 64
+
+
+def key_of(t):
+    k = t[:KEYLEN]
+    return k if len(k.replace(' ', '')) >= 12 else None
+
+
+def pair_by_content(r, la, lb, only_a, only_b, sa, sb):
+    """Pasangkan baris beda lewat kunci isi (awal baris), bukan lewat posisi,
+    supaya transaksi yang sama yang disandingkan walau urutannya bergeser."""
+    idx = {}
+    for j, ln in enumerate(lb):
+        if ln in only_b:
+            k = key_of(ln)
+            if k:
+                idx.setdefault(k, []).append(j)
+    pos, used_b, paired_a, paired_b = [], set(), set(), set()
+    for i, ln in enumerate(la):
+        if len(pos) >= SAMPLE_POS:
+            break
+        if ln not in only_a or ln in paired_a:
+            continue
+        k = key_of(ln)
+        if not k or k not in idx:
+            continue
+        hit = next((j for j in idx[k] if j not in used_b), None)
+        if hit is None:
+            continue
+        used_b.add(hit)
+        paired_a.add(ln)
+        paired_b.add(lb[hit])
+        pos.append({'no': i + 1, 'noProd': hit + 1,
+                    'ptr': trunc(ln), 'prod': trunc(lb[hit]),
+                    'codeA': sa[i], 'codeB': sb[hit]})
+    r['samplesPos'] = pos
+    r['posDiff'] = len(pos)
+    return paired_a, paired_b
+
+
+def pick_unique(lines, uniq, sec, already=frozenset()):
+    """Contoh baris yang benar-benar tidak punya pasangan di sisi lain,
+    lengkap dengan nomor baris dan kode report tempat baris itu berada."""
     out, seen, per = [], set(), Counter()
     for i, ln in enumerate(lines):
         if len(out) >= SAMPLE_UNIQ:
             break
-        if ln in uniq and ln not in seen:
+        if ln in uniq and ln not in seen and ln not in already:
             seen.add(ln)
             per[sec[i]] += 1
             if per[sec[i]] <= 2:
@@ -235,18 +275,7 @@ def analyse(rel, a, b):
     r['onlyPtrRows'] = sum(only_a.values())
     r['onlyProdRows'] = sum(only_b.values())
 
-    # Hanya pasangan yang benar-benar beda isi yang dicatat. Baris yang sekadar
-    # bergeser posisinya - isinya tetap ada di sisi lain - dilewati.
-    pos, shifted = [], 0
-    for i in range(min(len(la), len(lb))):
-        if la[i] != lb[i]:
-            shifted += 1
-            if la[i] in only_a or lb[i] in only_b:
-                r['posDiff'] += 1
-                if len(pos) < SAMPLE_POS:
-                    pos.append({'no': i + 1, 'ptr': trunc(la[i]), 'prod': trunc(lb[i]),
-                                'codeA': sa[i], 'codeB': sb[i]})
-    r['samplesPos'] = pos
+    shifted = sum(1 for i in range(min(len(la), len(lb))) if la[i] != lb[i])
 
     if not only_a and not only_b:
         r['status'] = 'IDENTIK'
@@ -256,11 +285,12 @@ def analyse(rel, a, b):
         return r
 
     code_rows(r, la, lb, only_a, only_b, sa, sb, A[2], B[2])
-    r['samplesPtr'] = pick_unique(la, only_a, sa)
-    r['samplesProd'] = pick_unique(lb, only_b, sb)
+    paired_a, paired_b = pair_by_content(r, la, lb, only_a, only_b, sa, sb)
+    r['samplesPtr'] = pick_unique(la, only_a, sa, paired_a)
+    r['samplesProd'] = pick_unique(lb, only_b, sb, paired_b)
 
     uniq = list(only_a.keys()) + list(only_b.keys())
-    if uniq and all(is_meta(x) for x in uniq):
+    if uniq and len(uniq) <= 2 * SAMPLE_UNIQ and all(is_meta(x) for x in uniq):
         r['status'] = 'BEDA_HEADER'
         r['note'] = ('Beda hanya pada baris header/trailer (jam cetak, nomor halaman, '
                      'atau jumlah record). Baris data tidak berubah.')
@@ -594,18 +624,21 @@ function detailHTML(r){
         }).join('')+'</tbody></table></div>';
   }
   if(r.samplesPos.length){
-    h+='<div class="dhead">Contoh baris yang isinya berbeda</div>';
+    h+='<div class="dhead">Contoh baris yang isinya berbeda (transaksi yang sama, disandingkan)</div>';
     r.samplesPos.forEach(function(s){
       var p=hl(s.ptr,s.prod);
-      h+='<div class="lineno">baris '+s.no+kodeTag(s.codeA,s.codeB)+'</div><div class="pair">'
+      var lbl = s.noProd && s.noProd !== s.no
+        ? 'baris ' + s.no + ' (PTR) / ' + s.noProd + ' (PROD)'
+        : 'baris ' + s.no;
+      h+='<div class="lineno">'+lbl+kodeTag(s.codeA,s.codeB)+'</div><div class="pair">'
        +'<div class="p-ptr"><div class="lbl">PTR</div><pre>'+p[0]+'</pre></div>'
        +'<div class="p-prod"><div class="lbl">PROD</div><pre>'+p[1]+'</pre></div></div>';
     });
   }
   if(r.samplesPtr.length)
-    h+='<div class="dhead">Baris yang hanya ada di PTR</div>'+ulines(r.samplesPtr);
+    h+='<div class="dhead">Baris yang tidak punya pasangan di Production</div>'+ulines(r.samplesPtr);
   if(r.samplesProd.length)
-    h+='<div class="dhead">Baris yang hanya ada di Production</div>'+ulines(r.samplesProd);
+    h+='<div class="dhead">Baris yang tidak punya pasangan di PTR</div>'+ulines(r.samplesProd);
   return h+'</div>';
 }
 
