@@ -4,6 +4,9 @@ Alat bantu untuk memastikan report yang dihasilkan lingkungan **PTR** sama denga
 report **Production**. Membandingkan berkas report Fee Engine baris per baris,
 lalu melaporkan apa saja yang berbeda dan di **kode report** mana perbedaan itu berada.
 
+**Buka langsung di browser:**
+<https://jalinpembayaran-ops.github.io/Compare-Repot-Prod-x-PTR/>
+
 > ⚠️ **Repositori ini hanya berisi kode.** Berkas report Fee Engine memuat data
 > nasabah (nomor kartu, nomor rekening, nama, nominal transaksi) dan **tidak boleh**
 > dimasukkan ke repositori ini. `.gitignore` sudah menutup pola berkas tersebut,
@@ -15,7 +18,7 @@ lalu melaporkan apa saja yang berbeda dan di **kode report** mana perbedaan itu 
 
 | Berkas | Kegunaan |
 |---|---|
-| `Compare-Report-Tool.html` | Alat interaktif. Buka di browser, unggah report kedua sisi, langsung dibandingkan. |
+| `index.html` | Alat interaktif. Buka di browser, unggah report kedua sisi, langsung dibandingkan. |
 | `compare_report.py` | Versi baris perintah. Memindai dua folder dan menghasilkan satu berkas HTML laporan. |
 
 Keduanya memakai logika perbandingan yang sama dan menghasilkan angka yang identik.
@@ -24,9 +27,11 @@ Keduanya memakai logika perbandingan yang sama dan menghasilkan angka yang ident
 
 ## 1. Alat interaktif (tanpa instalasi)
 
-Dobel-klik `Compare-Report-Tool.html`. Tidak perlu Python, tidak perlu internet,
-tidak perlu server — seluruh proses berjalan di dalam browser dan berkas asli
-tidak pernah dikirim ke mana pun.
+Buka [halaman ini](https://jalinpembayaran-ops.github.io/Compare-Repot-Prod-x-PTR/),
+atau unduh `index.html` lalu dobel-klik. Tidak perlu Python, tidak perlu server.
+Seluruh proses berjalan di dalam browser dan berkas yang diunggah **tidak pernah
+dikirim ke mana pun** — halaman ini tidak memuat satu pun sumber dari luar dan
+tidak melakukan koneksi jaringan apa pun.
 
 Isi dua kotak (PTR dan Production), lalu klik **Bandingkan**. Tiap kotak menerima:
 
@@ -77,6 +82,11 @@ Beberapa keputusan yang sengaja diambil supaya laporannya tidak berisik:
 - **Beda urutan baris dianggap cocok.** Jika seluruh baris sama dan hanya urutannya
   berbeda, berkas dihitung Identik. Baris yang sekadar bergeser posisinya juga tidak
   ditampilkan sebagai contoh perbedaan.
+- **Baris dipasangkan lewat isi, bukan posisi.** Kalau urutan baris antar-lingkungan
+  bergeser, membandingkan baris ke-N lawan baris ke-N akan menyandingkan dua transaksi
+  yang berlainan. Pemasangan memakai kunci isi baris (64 karakter awal: jam, tanggal,
+  nomor referensi, nomor kartu), sehingga transaksi yang sama yang disandingkan dan
+  sorotan hanya jatuh pada kolom yang benar-benar berubah.
 - **Selisih jumlah halaman bukan ketidakcocokan kode report.** Kode report yang ada
   di kedua sisi tetapi jumlah halamannya berbeda dicatat sebagai keterangan, bukan
   sebagai kode yang hilang — penyebabnya jumlah transaksi yang berbeda.
@@ -96,3 +106,27 @@ Untuk report yang memuat baris `KODE REPORT`, detail tiap berkas menampilkan:
 
 Angka pada tabel per kode dijumlah tepat sama dengan total baris berbeda di
 ringkasan, jadi bisa dipakai menelusuri tanpa khawatir ada yang terlewat.
+
+## Mengunduh rincian perbedaan
+
+Di dalam detail, bagian *Contoh baris yang isinya berbeda* punya tombol
+**Unduh CSV**. Berkasnya memuat **seluruh** baris berpasangan yang berbeda, bukan
+hanya contoh yang tampil di layar:
+
+| Kolom | Isi |
+|---|---|
+| `No` | Nomor urut |
+| `Baris PTR` / `Baris PROD` | Nomor baris di masing-masing berkas |
+| `Kode Report` | Ditulis `11 / 10A` bila kedua sisi berada di section berbeda |
+| `Judul Section` | mis. `TRANSAKSI BERHASIL` |
+| `Kolom Beda` | Posisi karakter yang berubah, mis. `220-246` |
+| `Nilai PTR` / `Nilai PROD` | Potongan yang berbeda saja — ini pembedanya |
+| `Isi Lengkap PTR` / `Isi Lengkap PROD` | Baris utuh, untuk penelusuran |
+
+Format CSV pemisah titik-koma dengan BOM UTF-8, langsung rapi di Excel Indonesia.
+Untuk report yang selisihnya banyak, berkasnya bisa ratusan MB — buka lewat
+**Data → Get Data → From Text/CSV**, jangan dobel-klik. Kalau yang dibutuhkan hanya
+rekap perbedaannya, dua kolom `Isi Lengkap` bisa dihapus dan ukurannya menyusut drastis.
+
+Ringkasan per berkas juga bisa diunduh lewat tombol **Unduh CSV** di bawah tombol
+Bandingkan.
