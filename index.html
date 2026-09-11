@@ -245,6 +245,7 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
     <div class="dlg-hd">
       <div class="t" id="dlgTitle"></div>
       <span id="dlgBadge"></span>
+      <button class="rowbtn" id="dlPairs" hidden>Unduh CSV</button>
       <button class="dlg-x" id="dlgClose" aria-label="Tutup">&times;</button>
     </div>
     <div id="dlgBody"></div>
@@ -495,6 +496,90 @@ function diffRange(a, b){
   return {start:s, endA:a.length - e, endB:b.length - e};
 }
 
+function maskKey(t){
+  var k = t.slice(0, KEYLEN).replace(/[0-9]/g, '#');
+  return (k.replace(/\s/g,'').length >= 12) ? k : null;
+}
+
+function lcpLen(a, b){
+  var m = Math.min(a.length, b.length), i = 0;
+  while(i < m && a.charAt(i) === b.charAt(i)) i++;
+  return i;
+}
+
+/* Pasangkan baris beda antara kedua sisi. Tiga tahap, dari yang paling pasti
+   ke yang paling longgar:
+     1. kunci persis    - 64 karakter awal sama
+     2. kunci bertopeng - angka diabaikan; hanya diterima bila tidak ambigu
+     3. kemiripan awalan - untuk sisa yang sedikit, dicocokkan satu per satu  */
+function pairLines(la, lb, uA, uB){
+  var idxA = [], idxB = [], seen = new Set(), i, j;
+  for(i=0;i<la.length;i++) if(uA.has(la[i]) && !seen.has(la[i])){ seen.add(la[i]); idxA.push(i); }
+  seen = new Set();
+  for(j=0;j<lb.length;j++) if(uB.has(lb[j]) && !seen.has(lb[j])){ seen.add(lb[j]); idxB.push(j); }
+
+  var pairs = [], takenA = new Set(), takenB = new Set();
+
+  function pass(keyFn, strict){
+    var mapB = new Map(), cntA = new Map(), k, t, z, ia, cand, hit;
+    for(t=0;t<idxB.length;t++){
+      if(takenB.has(idxB[t])) continue;
+      k = keyFn(lb[idxB[t]]);
+      if(!k) continue;
+      if(!mapB.has(k)) mapB.set(k, []);
+      mapB.get(k).push(idxB[t]);
+    }
+    if(strict){
+      for(t=0;t<idxA.length;t++){
+        if(takenA.has(idxA[t])) continue;
+        k = keyFn(la[idxA[t]]);
+        if(k) cntA.set(k, (cntA.get(k)||0)+1);
+      }
+    }
+    for(t=0;t<idxA.length;t++){
+      ia = idxA[t];
+      if(takenA.has(ia)) continue;
+      k = keyFn(la[ia]);
+      if(!k || !mapB.has(k)) continue;
+      cand = mapB.get(k);
+      if(strict && (cand.length !== 1 || cntA.get(k) !== 1)) continue;
+      hit = -1;
+      for(z=0;z<cand.length;z++){ if(!takenB.has(cand[z])){ hit = cand[z]; break; } }
+      if(hit < 0) continue;
+      takenA.add(ia); takenB.add(hit);
+      pairs.push({ia:ia, ib:hit});
+    }
+  }
+
+  pass(keyOf, false);
+  pass(maskKey, true);
+
+  var restA = idxA.filter(function(x){ return !takenA.has(x); });
+  var restB = idxB.filter(function(x){ return !takenB.has(x); });
+  if(restA.length && restB.length && restA.length <= 400 && restB.length <= 400){
+    var best, bestLen, L;
+    for(i=0;i<restA.length;i++){
+      best = -1; bestLen = 7;          /* minimal 8 karakter awal harus sama */
+      for(j=0;j<restB.length;j++){
+        if(takenB.has(restB[j])) continue;
+        L = lcpLen(la[restA[i]], lb[restB[j]]);
+        if(L > bestLen){ bestLen = L; best = restB[j]; }
+      }
+      if(best >= 0){
+        takenA.add(restA[i]); takenB.add(best);
+        pairs.push({ia:restA[i], ib:best});
+      }
+    }
+  }
+
+  pairs.sort(function(x,y){ return x.ia - y.ia; });
+  var valA = new Set(), valB = new Set();
+  pairs.forEach(function(p){ valA.add(la[p.ia]); valB.add(lb[p.ib]); });
+  return {pairs:pairs, valA:valA, valB:valB,
+          soloA:idxA.filter(function(x){ return !takenA.has(x); }),
+          soloB:idxB.filter(function(x){ return !takenB.has(x); })};
+}
+
 function blankRow(name, folder){
   return { name:name, name2:null, folder:folder, path:folder+'/'+name, codes:[], codesSame:0, codesPages:[], codeRows:[],
     orderOnly:false,
@@ -568,29 +653,15 @@ function analyseText(row, ta, tb, trim){
     return a<b ? -1 : a>b ? 1 : 0; });
   row.codeRows = rowsOut;
 
-  /* Pasangkan baris beda lewat kunci isi (awal baris), bukan lewat posisi,
-     supaya transaksi yang sama yang disandingkan walau urutannya bergeser. */
-  var idxB = new Map(), kb, j;
-  for(j=0;j<lb.length;j++){
-    if(uB.has(lb[j])){
-      kb = keyOf(lb[j]);
-      if(kb){ if(!idxB.has(kb)) idxB.set(kb, []); idxB.get(kb).push(j); }
-    }
-  }
-  var pos = [], usedB = new Set(), pairedA = new Set(), pairedB = new Set();
-  for(i=0;i<la.length && pos.length<SAMPLE_POS;i++){
-    if(!uA.has(la[i]) || pairedA.has(la[i])) continue;
-    var ka = keyOf(la[i]);
-    if(!ka || !idxB.has(ka)) continue;
-    var cand = idxB.get(ka), hit = -1, t;
-    for(t=0;t<cand.length;t++){ if(!usedB.has(cand[t])){ hit = cand[t]; break; } }
-    if(hit < 0) continue;
-    usedB.add(hit); pairedA.add(la[i]); pairedB.add(lb[hit]);
-    pos.push({no:i+1, noProd:hit+1, ptr:trunc(la[i]), prod:trunc(lb[hit]),
-              codeA:A.sec[i], codeB:B.sec[hit]});
-  }
-  row.samplesPos = pos;
-  row.posDiff = pos.length;
+  /* Pasangkan baris beda lewat isinya, bukan lewat posisi, supaya transaksi
+     yang sama yang disandingkan walau urutan barisnya bergeser. */
+  var M = pairLines(la, lb, uA, uB);
+  var pairedA = M.valA, pairedB = M.valB;
+  row.samplesPos = M.pairs.slice(0, SAMPLE_POS).map(function(p){
+    return {no:p.ia+1, noProd:p.ib+1, ptr:trunc(la[p.ia]), prod:trunc(lb[p.ib]),
+            codeA:A.sec[p.ia], codeB:B.sec[p.ib]};
+  });
+  row.posDiff = M.pairs.length;
 
   /* Sisanya - baris yang benar-benar tidak punya pasangan di sisi lain.
      Maksimal 2 per kode report supaya menyebar ke banyak section. */
@@ -901,9 +972,8 @@ function detailHTML(r){
         }).join('')+'</tbody></table></div>';
   }
   if(r.samplesPos.length){
-    h+='<div class="dhead row"><span>Contoh baris yang isinya berbeda (transaksi yang sama, disandingkan)</span>'
-      +'<button class="rowbtn" id="dlPairs">Unduh CSV</button></div>'
-      +'<div class="hint">Di layar hanya ditampilkan sebagian contoh. Berkas CSV memuat seluruh baris berpasangan yang berbeda, lengkap dengan kolom posisi dan nilai yang berubah.</div>';
+    h+='<div class="dhead">Contoh baris yang isinya berbeda (transaksi yang sama, disandingkan)</div>'
+      +'<div class="hint">Di layar hanya ditampilkan sebagian contoh. Tombol Unduh CSV di atas memuat seluruhnya.</div>';
     r.samplesPos.forEach(function(s){
       var p=hl(s.ptr,s.prod);
       var lbl = s.noProd && s.noProd !== s.no
@@ -955,39 +1025,39 @@ function render(){
   });
 }
 
-/* Ulangi pemasangan untuk SELURUH baris, tanpa batas 25 contoh. */
-function buildAllPairs(fa, fb, trim){
+/* Bangun seluruh baris berbeda untuk diunduh: yang berpasangan maupun yang
+   memang tidak punya pasangan di sisi lain. */
+function buildAllRows(fa, fb, trim){
   return Promise.all([fa.arrayBuffer(), fb.arrayBuffer()]).then(function(bufs){
     var la = splitLines(dec.decode(bufs[0]), trim);
     var lb = splitLines(dec.decode(bufs[1]), trim);
     bufs[0] = bufs[1] = null;
-    var A = sectionScan(la), B = sectionScan(lb), i, j;
+    var A = sectionScan(la), B = sectionScan(lb), i;
     var ca = new Map(), cb = new Map();
     for(i=0;i<la.length;i++) ca.set(la[i], (ca.get(la[i])||0)+1);
     for(i=0;i<lb.length;i++) cb.set(lb[i], (cb.get(lb[i])||0)+1);
     var uA = new Map(), uB = new Map();
     ca.forEach(function(v,k){ var d = v - (cb.get(k)||0); if(d>0) uA.set(k,d); });
     cb.forEach(function(v,k){ var d = v - (ca.get(k)||0); if(d>0) uB.set(k,d); });
-    var idxB = new Map(), kb;
-    for(j=0;j<lb.length;j++){
-      if(uB.has(lb[j])){
-        kb = keyOf(lb[j]);
-        if(kb){ if(!idxB.has(kb)) idxB.set(kb, []); idxB.get(kb).push(j); }
-      }
-    }
-    var out = [], usedB = new Set(), pairedA = new Set(), ka, cand, hit, t;
-    for(i=0;i<la.length;i++){
-      if(!uA.has(la[i]) || pairedA.has(la[i])) continue;
-      ka = keyOf(la[i]);
-      if(!ka || !idxB.has(ka)) continue;
-      cand = idxB.get(ka); hit = -1;
-      for(t=0;t<cand.length;t++){ if(!usedB.has(cand[t])){ hit = cand[t]; break; } }
-      if(hit < 0) continue;
-      usedB.add(hit); pairedA.add(la[i]);
-      out.push({no:i+1, noProd:hit+1, ptr:la[i], prod:lb[hit],
-                code:(A.sec[i] === B.sec[hit]) ? A.sec[i] : (A.sec[i] + ' / ' + B.sec[hit]),
-                title:A.titles.get(A.sec[i]) || B.titles.get(B.sec[hit]) || ''});
-    }
+
+    var M = pairLines(la, lb, uA, uB), out = [];
+    function judul(code){ return A.titles.get(code) || B.titles.get(code) || ''; }
+
+    M.pairs.forEach(function(p){
+      out.push({status:'BEDA ISI', no:p.ia+1, noProd:p.ib+1,
+                ptr:la[p.ia], prod:lb[p.ib],
+                code:(A.sec[p.ia] === B.sec[p.ib]) ? A.sec[p.ia]
+                     : (A.sec[p.ia] + ' / ' + B.sec[p.ib]),
+                title:judul(A.sec[p.ia])});
+    });
+    M.soloA.forEach(function(ia){
+      out.push({status:'HANYA DI PTR', no:ia+1, noProd:'', ptr:la[ia], prod:'',
+                code:A.sec[ia], title:judul(A.sec[ia])});
+    });
+    M.soloB.forEach(function(ib){
+      out.push({status:'HANYA DI PROD', no:'', noProd:ib+1, ptr:'', prod:lb[ib],
+                code:B.sec[ib], title:judul(B.sec[ib])});
+    });
     return out;
   });
 }
@@ -1011,30 +1081,32 @@ function downloadPairs(r){
   btn.disabled = true; btn.textContent = 'Menyiapkan...';
 
   var job = (r.__fa && r.__fb)
-    ? buildAllPairs(r.__fa, r.__fb, r.__trim)
-    : Promise.resolve(r.samplesPos.map(function(s){
-        return {no:s.no, noProd:s.noProd, ptr:s.ptr, prod:s.prod,
-                code:(s.codeA === s.codeB) ? s.codeA : (s.codeA + ' / ' + s.codeB), title:''};
+    ? buildAllRows(r.__fa, r.__fb, r.__trim)
+    : Promise.resolve(r.samplesPos.map(function(x){
+        return {status:'BEDA ISI', no:x.no, noProd:x.noProd, ptr:x.ptr, prod:x.prod,
+                code:(x.codeA === x.codeB) ? x.codeA : (x.codeA + ' / ' + x.codeB),
+                title:''};
       }));
 
-  job.then(function(pairs){
-    var head = ['No','Baris PTR','Baris PROD','Kode Report','Judul Section',
+  job.then(function(rows){
+    var head = ['No','Status','Baris PTR','Baris PROD','Kode Report','Judul Section',
                 'Kolom Beda','Nilai PTR','Nilai PROD','Isi Lengkap PTR','Isi Lengkap PROD'];
     var lines = [head.map(csvCell).join(';')];
-    pairs.forEach(function(p, i){
-      var d = diffRange(p.ptr, p.prod);
-      lines.push([
-        i + 1, p.no, p.noProd, p.code || '-', p.title || '-',
-        (d.start + 1) + '-' + Math.max(d.endA, d.endB),
-        p.ptr.slice(d.start, d.endA).trim(),
-        p.prod.slice(d.start, d.endB).trim(),
-        p.ptr, p.prod
-      ].map(csvCell).join(';'));
+    rows.forEach(function(p, i){
+      var kolom = '', nilA = '', nilB = '';
+      if(p.ptr && p.prod){
+        var d = diffRange(p.ptr, p.prod);
+        kolom = (d.start + 1) + '-' + Math.max(d.endA, d.endB);
+        nilA = p.ptr.slice(d.start, d.endA).trim();
+        nilB = p.prod.slice(d.start, d.endB).trim();
+      }
+      lines.push([i + 1, p.status, p.no, p.noProd, p.code || '-', p.title || '-',
+                  kolom, nilA, nilB, p.ptr, p.prod].map(csvCell).join(';'));
     });
-    var base = (r.name || 'report').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/[.]txt$/i, '');
+    var base = (r.name || 'report').replace(/[.]txt$/i, '').replace(/[^A-Za-z0-9._-]+/g, '-');
     saveBlob(new Blob(['\ufeff' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}),
              'beda-' + base + '.csv');
-    btn.textContent = pairs.length.toLocaleString('id-ID') + ' baris terunduh';
+    btn.textContent = rows.length.toLocaleString('id-ID') + ' baris terunduh';
     setTimeout(function(){ btn.textContent = label; btn.disabled = false; }, 2500);
   }).catch(function(err){
     btn.textContent = 'Gagal: ' + err;
@@ -1060,7 +1132,12 @@ function openDlg(r){
     });
   });
   var dl = document.getElementById('dlPairs');
-  if(dl) dl.onclick = function(){ downloadPairs(r); };
+  if(dl){
+    dl.hidden = (r.status === 'HANYA_PTR' || r.status === 'HANYA_PROD');
+    dl.disabled = false;
+    dl.textContent = 'Unduh CSV';
+    dl.onclick = function(){ downloadPairs(r); };
+  }
   modal.hidden=false;
   document.body.style.overflow='hidden';
 }
