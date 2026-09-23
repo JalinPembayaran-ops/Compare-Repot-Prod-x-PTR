@@ -212,7 +212,7 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
       </select>
     </label>
     <label class="opt"><input type="checkbox" id="optTrim" checked> Abaikan spasi di akhir baris</label>
-    <button class="btn ghost" id="csv" hidden>Unduh CSV</button>
+    <button class="btn ghost" id="csv" hidden>Unduh Excel</button>
   </div>
 
   <div class="progress" id="prog">
@@ -245,7 +245,7 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
     <div class="dlg-hd">
       <div class="t" id="dlgTitle"></div>
       <span id="dlgBadge"></span>
-      <button class="rowbtn" id="dlPairs" hidden>Unduh CSV</button>
+      <button class="rowbtn" id="dlPairs" hidden>Unduh Excel</button>
       <button class="dlg-x" id="dlgClose" aria-label="Tutup">&times;</button>
     </div>
     <div id="dlgBody"></div>
@@ -563,7 +563,11 @@ function pairLines(la, lb, uA, uB){
       for(j=0;j<restB.length;j++){
         if(takenB.has(restB[j])) continue;
         L = lcpLen(la[restA[i]], lb[restB[j]]);
-        if(L > bestLen){ bestLen = L; best = restB[j]; }
+        /* awalan yang sama harus berisi, bukan sekadar deretan spasi - kalau
+           tidak, dua baris menjorok yang tak berhubungan ikut terpasangkan */
+        if(L > bestLen && la[restA[i]].slice(0, L).replace(/\s/g,'').length >= 6){
+          bestLen = L; best = restB[j];
+        }
       }
       if(best >= 0){
         takenA.add(restA[i]); takenB.add(best);
@@ -973,7 +977,7 @@ function detailHTML(r){
   }
   if(r.samplesPos.length){
     h+='<div class="dhead">Contoh baris yang isinya berbeda (transaksi yang sama, disandingkan)</div>'
-      +'<div class="hint">Di layar hanya ditampilkan sebagian contoh. Tombol Unduh CSV di atas memuat seluruhnya.</div>';
+      +'<div class="hint">Di layar hanya ditampilkan sebagian contoh. Tombol Unduh Excel di atas memuat seluruhnya.</div>';
     r.samplesPos.forEach(function(s){
       var p=hl(s.ptr,s.prod);
       var lbl = s.noProd && s.noProd !== s.no
@@ -1062,6 +1066,261 @@ function buildAllRows(fa, fb, trim){
   });
 }
 
+/* ================= penulis berkas .xlsx (tanpa pustaka luar) =================
+   Berkas xlsx sebenarnya arsip ZIP berisi beberapa XML. Dibangun sendiri di
+   sini supaya alat ini tetap satu berkas dan tetap jalan tanpa internet.
+   Pemampatannya memakai CompressionStream bawaan browser; kalau tidak ada,
+   isinya disimpan apa adanya (berkas lebih besar, tetap bisa dibuka Excel).  */
+
+var XLSX_MAX_ROWS = 1048575;   /* batas baris data satu lembar Excel */
+
+var CRC_TABLE = (function(){
+  var t = new Uint32Array(256), c, n, k;
+  for(n=0;n<256;n++){
+    c = n;
+    for(k=0;k<8;k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crcUpdate(c, b){
+  for(var i=0;i<b.length;i++) c = (CRC_TABLE[(c ^ b[i]) & 0xFF] ^ (c >>> 8)) >>> 0;
+  return c;
+}
+
+function concatBytes(list, total){
+  var out = new Uint8Array(total), at = 0, i;
+  for(i=0;i<list.length;i++){ out.set(list[i], at); at += list[i].length; }
+  return out;
+}
+
+var CTRL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]/g;
+var XENC = new TextEncoder();
+
+/* Satu berkas di dalam ZIP. `produce(write)` memanggil write(Uint8Array)
+   sebanyak yang dibutuhkan dan mengembalikan Promise. */
+function zipEntry(name, produce){
+  var crc = 0xFFFFFFFF, raw = 0, out = [], outLen = 0;
+  var useCS = (typeof CompressionStream !== 'undefined');
+  var w = null, pump = Promise.resolve();
+
+  if(useCS){
+    var cs = new CompressionStream('deflate-raw');
+    w = cs.writable.getWriter();
+    var rd = cs.readable.getReader();
+    pump = (function read(){
+      return rd.read().then(function(r){
+        if(r.done) return;
+        out.push(r.value); outLen += r.value.length;
+        return read();
+      });
+    })();
+  }
+
+  function write(bytes){
+    crc = crcUpdate(crc, bytes); raw += bytes.length;
+    if(useCS) return w.write(bytes);
+    out.push(bytes); outLen += bytes.length;
+    return Promise.resolve();
+  }
+
+  return Promise.resolve(produce(write))
+    .then(function(){ return useCS ? w.close().then(function(){ return pump; }) : null; })
+    .then(function(){
+      return {name:name, crc:(crc ^ 0xFFFFFFFF) >>> 0, raw:raw,
+              data:concatBytes(out, outLen), method:useCS ? 8 : 0};
+    });
+}
+
+function zipText(name, text){
+  return zipEntry(name, function(write){ return write(XENC.encode(text)); });
+}
+
+function buildZip(entries){
+  var parts = [], central = [], offset = 0;
+  entries.forEach(function(e){
+    var nb = XENC.encode(e.name);
+    var lh = new Uint8Array(30 + nb.length), d = new DataView(lh.buffer);
+    d.setUint32(0, 0x04034b50, true);
+    d.setUint16(4, 20, true);
+    d.setUint16(6, 0x0800, true);
+    d.setUint16(8, e.method, true);
+    d.setUint16(12, 0x2821, true);
+    d.setUint32(14, e.crc, true);
+    d.setUint32(18, e.data.length, true);
+    d.setUint32(22, e.raw, true);
+    d.setUint16(26, nb.length, true);
+    lh.set(nb, 30);
+    parts.push(lh, e.data);
+    central.push({e:e, nb:nb, off:offset});
+    offset += lh.length + e.data.length;
+  });
+
+  var cd = [], cdLen = 0;
+  central.forEach(function(c){
+    var h = new Uint8Array(46 + c.nb.length), d = new DataView(h.buffer);
+    d.setUint32(0, 0x02014b50, true);
+    d.setUint16(4, 20, true);
+    d.setUint16(6, 20, true);
+    d.setUint16(8, 0x0800, true);
+    d.setUint16(10, c.e.method, true);
+    d.setUint16(14, 0x2821, true);
+    d.setUint32(16, c.e.crc, true);
+    d.setUint32(20, c.e.data.length, true);
+    d.setUint32(24, c.e.raw, true);
+    d.setUint16(28, c.nb.length, true);
+    d.setUint32(42, c.off, true);
+    h.set(c.nb, 46);
+    cd.push(h); cdLen += h.length;
+  });
+
+  var eocd = new Uint8Array(22), d2 = new DataView(eocd.buffer);
+  d2.setUint32(0, 0x06054b50, true);
+  d2.setUint16(8, entries.length, true);
+  d2.setUint16(10, entries.length, true);
+  d2.setUint32(12, cdLen, true);
+  d2.setUint32(16, offset, true);
+
+  return new Blob(parts.concat(cd, [eocd]),
+    {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
+function xmlEsc(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c];
+    })
+    .replace(CTRL_RE, '');
+}
+
+function colName(i){
+  var s = '';
+  i += 1;
+  while(i > 0){ var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = (i - m - 1) / 26; }
+  return s;
+}
+
+/* cols: [{t:judul, w:lebar, num:true bila angka, mono:true bila huruf rata}] */
+function xlsxBlob(cols, rows, sheetName){
+  var n = Math.min(rows.length, XLSX_MAX_ROWS);
+  var last = colName(cols.length - 1), dim = 'A1:' + last + (n + 1);
+
+  var head =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<dimension ref="' + dim + '"/>'
+    + '<sheetViews><sheetView tabSelected="1" workbookViewId="0">'
+    + '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+    + '</sheetView></sheetViews>'
+    + '<sheetFormatPr defaultRowHeight="15"/><cols>'
+    + cols.map(function(c, i){
+        return '<col min="' + (i+1) + '" max="' + (i+1) + '" width="' + c.w
+             + '" customWidth="1"' + (c.mono ? ' style="2"' : '') + '/>';
+      }).join('')
+    + '</cols><sheetData><row r="1">'
+    + cols.map(function(c, i){
+        return '<c r="' + colName(i) + '1" t="inlineStr" s="1"><is><t>'
+             + xmlEsc(c.t) + '</t></is></c>';
+      }).join('')
+    + '</row>';
+
+  var foot = '</sheetData><autoFilter ref="' + dim + '"/></worksheet>';
+
+  function rowXml(vals, idx){
+    var r = idx + 2, cells = '', i, v, ref;
+    for(i=0;i<cols.length;i++){
+      v = vals[i];
+      if(v === null || v === undefined || v === '') continue;
+      ref = colName(i) + r;
+      if(cols[i].num && v !== '' && isFinite(v))
+        cells += '<c r="' + ref + '"><v>' + v + '</v></c>';
+      else
+        cells += '<c r="' + ref + '" t="inlineStr"'
+               + (cols[i].mono ? ' s="2"' : '') + '><is><t xml:space="preserve">'
+               + xmlEsc(v) + '</t></is></c>';
+    }
+    return '<row r="' + r + '">' + cells + '</row>';
+  }
+
+  var sheet = zipEntry('xl/worksheets/sheet1.xml', function(write){
+    var i = 0;
+    function step(){
+      var buf = [], k = 0;
+      while(i < n && k < 2000){ buf.push(rowXml(rows[i], i)); i++; k++; }
+      return write(XENC.encode(buf.join(''))).then(function(){
+        if(i < n) return step();
+      });
+    }
+    return write(XENC.encode(head)).then(step).then(function(){
+      return write(XENC.encode(foot));
+    });
+  });
+
+  var CT = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    + '<Default Extension="xml" ContentType="application/xml"/>'
+    + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    + '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+    + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+    + '</Types>';
+
+  var RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+    + '</Relationships>';
+
+  var WB = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+    + '<sheets><sheet name="' + xmlEsc(sheetName || 'Perbedaan')
+    + '" sheetId="1" r:id="rId1"/></sheets></workbook>';
+
+  var WBR = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+    + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+    + '</Relationships>';
+
+  var ST = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<fonts count="3">'
+    + '<font><sz val="11"/><name val="Calibri"/></font>'
+    + '<font><b/><sz val="11"/><name val="Calibri"/><color rgb="FF1A3D6D"/></font>'
+    + '<font><sz val="10"/><name val="Consolas"/></font>'
+    + '</fonts>'
+    + '<fills count="3">'
+    + '<fill><patternFill patternType="none"/></fill>'
+    + '<fill><patternFill patternType="gray125"/></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFE9F1FD"/><bgColor indexed="64"/></patternFill></fill>'
+    + '</fills>'
+    + '<borders count="2">'
+    + '<border><left/><right/><top/><bottom/><diagonal/></border>'
+    + '<border><left/><right/><top/><bottom style="thin"><color rgb="FF9DB8DC"/></bottom><diagonal/></border>'
+    + '</borders>'
+    + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="3">'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    + '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0"'
+    + ' applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">'
+    + '<alignment vertical="center"/></xf>'
+    + '<xf numFmtId="49" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+    + '</cellXfs>'
+    + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+    + '</styleSheet>';
+
+  return Promise.all([
+    zipText('[Content_Types].xml', CT),
+    zipText('_rels/.rels', RELS),
+    zipText('xl/workbook.xml', WB),
+    zipText('xl/_rels/workbook.xml.rels', WBR),
+    zipText('xl/styles.xml', ST),
+    sheet
+  ]).then(function(entries){
+    return {blob:buildZip(entries), rows:n, dipotong:rows.length > n};
+  });
+}
+
 function csvCell(v){
   return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
 }
@@ -1088,11 +1347,22 @@ function downloadPairs(r){
                 title:''};
       }));
 
+  var COLS = [
+    {t:'No',                w:6,  num:true},
+    {t:'Status',            w:15},
+    {t:'Baris PTR',         w:10, num:true},
+    {t:'Baris PROD',        w:11, num:true},
+    {t:'Kode Report',       w:13},
+    {t:'Judul Section',     w:34},
+    {t:'Kolom Beda',        w:12},
+    {t:'Nilai PTR',         w:26, mono:true},
+    {t:'Nilai PROD',        w:26, mono:true},
+    {t:'Isi Lengkap PTR',   w:72, mono:true},
+    {t:'Isi Lengkap PROD',  w:72, mono:true}
+  ];
+
   job.then(function(rows){
-    var head = ['No','Status','Baris PTR','Baris PROD','Kode Report','Judul Section',
-                'Kolom Beda','Nilai PTR','Nilai PROD','Isi Lengkap PTR','Isi Lengkap PROD'];
-    var lines = [head.map(csvCell).join(';')];
-    rows.forEach(function(p, i){
+    var data = rows.map(function(p, i){
       var kolom = '', nilA = '', nilB = '';
       if(p.ptr && p.prod){
         var d = diffRange(p.ptr, p.prod);
@@ -1100,17 +1370,19 @@ function downloadPairs(r){
         nilA = p.ptr.slice(d.start, d.endA).trim();
         nilB = p.prod.slice(d.start, d.endB).trim();
       }
-      lines.push([i + 1, p.status, p.no, p.noProd, p.code || '-', p.title || '-',
-                  kolom, nilA, nilB, p.ptr, p.prod].map(csvCell).join(';'));
+      return [i + 1, p.status, p.no, p.noProd, p.code || '-', p.title || '-',
+              kolom, nilA, nilB, p.ptr, p.prod];
     });
+    return xlsxBlob(COLS, data, 'Perbedaan');
+  }).then(function(res){
     var base = (r.name || 'report').replace(/[.]txt$/i, '').replace(/[^A-Za-z0-9._-]+/g, '-');
-    saveBlob(new Blob(['\ufeff' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}),
-             'beda-' + base + '.csv');
-    btn.textContent = rows.length.toLocaleString('id-ID') + ' baris terunduh';
-    setTimeout(function(){ btn.textContent = label; btn.disabled = false; }, 2500);
+    saveBlob(res.blob, 'beda-' + base + '.xlsx');
+    btn.textContent = res.rows.toLocaleString('id-ID') + ' baris terunduh'
+                    + (res.dipotong ? ' (dipotong di batas Excel)' : '');
+    setTimeout(function(){ btn.textContent = label; btn.disabled = false; }, 3000);
   }).catch(function(err){
     btn.textContent = 'Gagal: ' + err;
-    setTimeout(function(){ btn.textContent = label; btn.disabled = false; }, 3000);
+    setTimeout(function(){ btn.textContent = label; btn.disabled = false; }, 4000);
   });
 }
 
@@ -1135,7 +1407,7 @@ function openDlg(r){
   if(dl){
     dl.hidden = (r.status === 'HANYA_PTR' || r.status === 'HANYA_PROD');
     dl.disabled = false;
-    dl.textContent = 'Unduh CSV';
+    dl.textContent = 'Unduh Excel';
     dl.onclick = function(){ downloadPairs(r); };
   }
   modal.hidden=false;
@@ -1148,20 +1420,34 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape'&&!modal.hi
 
 /* ================= ekspor CSV ================= */
 document.getElementById('csv').onclick = function(){
-  var q = function(v){ return '"' + String(v==null?'':v).replace(/"/g,'""') + '"'; };
-  var lines = [['Folder','File','Status','Ukuran PTR','Ukuran Prod','Baris PTR','Baris Prod',
-                'Baris hanya di PTR','Baris hanya di Prod','Posisi baris beda','Keterangan'].map(q).join(';')];
-  rows.forEach(function(r){
-    lines.push([r.folder, r.name + (r.name2 ? ' <-> ' + r.name2 : ''), SM[r.status][0],
-      r.sizePtr, r.sizeProd, r.linesPtr, r.linesProd,
-      r.onlyPtrRows, r.onlyProdRows, r.posDiff, r.note].map(q).join(';'));
+  var btn = document.getElementById('csv'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Menyiapkan...';
+  var COLS = [
+    {t:'Folder',              w:24},
+    {t:'File',                w:46, mono:true},
+    {t:'Status',              w:18},
+    {t:'Ukuran PTR',          w:12, num:true},
+    {t:'Ukuran Prod',         w:12, num:true},
+    {t:'Baris PTR',           w:11, num:true},
+    {t:'Baris Prod',          w:11, num:true},
+    {t:'Baris hanya di PTR',  w:18, num:true},
+    {t:'Baris hanya di Prod', w:19, num:true},
+    {t:'Akhiran baris PTR',   w:18},
+    {t:'Akhiran baris Prod',  w:19},
+    {t:'Keterangan',          w:70}
+  ];
+  var data = rows.map(function(r){
+    return [r.folder, r.name + (r.name2 ? ' <-> ' + r.name2 : ''), SM[r.status][0],
+            r.sizePtr, r.sizeProd, r.linesPtr, r.linesProd,
+            r.onlyPtrRows, r.onlyProdRows, r.eolPtr || '', r.eolProd || '', r.note];
   });
-  var blob = new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'compare-ptr-vs-prod.csv';
-  document.body.appendChild(a); a.click();
-  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  xlsxBlob(COLS, data, 'Ringkasan').then(function(res){
+    saveBlob(res.blob, 'ringkasan-ptr-vs-prod.xlsx');
+    btn.textContent = label; btn.disabled = false;
+  }).catch(function(err){
+    btn.textContent = 'Gagal: ' + err;
+    setTimeout(function(){ btn.textContent = label; btn.disabled = false; }, 4000);
+  });
 };
 
 })();
