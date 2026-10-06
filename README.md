@@ -84,9 +84,12 @@ Beberapa keputusan yang sengaja diambil supaya laporannya tidak berisik:
   ditampilkan sebagai contoh perbedaan.
 - **Baris dipasangkan lewat isi, bukan posisi.** Kalau urutan baris antar-lingkungan
   bergeser, membandingkan baris ke-N lawan baris ke-N akan menyandingkan dua transaksi
-  yang berlainan. Pemasangan memakai kunci isi baris (64 karakter awal: jam, tanggal,
-  nomor referensi, nomor kartu), sehingga transaksi yang sama yang disandingkan dan
-  sorotan hanya jatuh pada kolom yang benar-benar berubah.
+  yang berlainan. Pemasangan berjalan tiga tahap, dari yang paling pasti ke yang paling
+  longgar: 64 karakter awal sama persis; lalu kunci yang mengabaikan angka, hanya
+  diterima bila tidak ambigu; lalu kemiripan awalan untuk sisa yang jumlahnya sedikit.
+  Tahap kedua dan ketiga diperlukan karena pada sebagian report — Fee-Marketing,
+  Netting, Detail-Settlement, Klaim-Lain, Switching-Fee — perbedaannya justru jatuh
+  di dalam 64 karakter awal itu, sehingga kuncinya ikut berubah.
 - **Selisih jumlah halaman bukan ketidakcocokan kode report.** Kode report yang ada
   di kedua sisi tetapi jumlah halamannya berbeda dicatat sebagai keterangan, bukan
   sebagai kode yang hilang — penyebabnya jumlah transaksi yang berbeda.
@@ -109,13 +112,13 @@ ringkasan, jadi bisa dipakai menelusuri tanpa khawatir ada yang terlewat.
 
 ## Mengunduh rincian perbedaan
 
-Di dalam detail, bagian *Contoh baris yang isinya berbeda* punya tombol
-**Unduh CSV**. Berkasnya memuat **seluruh** baris berpasangan yang berbeda, bukan
-hanya contoh yang tampil di layar:
+Di dalam detail tiap berkas ada tombol **Unduh Excel**. Berkasnya memuat **seluruh**
+baris yang berbeda, bukan hanya contoh yang tampil di layar:
 
 | Kolom | Isi |
 |---|---|
 | `No` | Nomor urut |
+| `Status` | `BEDA ISI`, `HANYA DI PTR`, atau `HANYA DI PROD` |
 | `Baris PTR` / `Baris PROD` | Nomor baris di masing-masing berkas |
 | `Kode Report` | Ditulis `11 / 10A` bila kedua sisi berada di section berbeda |
 | `Judul Section` | mis. `TRANSAKSI BERHASIL` |
@@ -123,10 +126,15 @@ hanya contoh yang tampil di layar:
 | `Nilai PTR` / `Nilai PROD` | Potongan yang berbeda saja — ini pembedanya |
 | `Isi Lengkap PTR` / `Isi Lengkap PROD` | Baris utuh, untuk penelusuran |
 
-Format CSV pemisah titik-koma dengan BOM UTF-8, langsung rapi di Excel Indonesia.
-Untuk report yang selisihnya banyak, berkasnya bisa ratusan MB — buka lewat
-**Data → Get Data → From Text/CSV**, jangan dobel-klik. Kalau yang dibutuhkan hanya
-rekap perbedaannya, dua kolom `Isi Lengkap` bisa dihapus dan ukurannya menyusut drastis.
+Lembarnya sudah siap pakai: baris judul dibekukan dan diberi filter otomatis, lebar
+kolom disetel, kolom isi report memakai huruf rata supaya kolom laporan tetap lurus,
+dan nomor baris ditulis sebagai angka sehingga bisa diurutkan dengan benar.
 
-Ringkasan per berkas juga bisa diunduh lewat tombol **Unduh CSV** di bawah tombol
+Ringkasan per berkas juga bisa diunduh lewat tombol **Unduh Excel** di bawah tombol
 Bandingkan.
+
+Berkas `.xlsx` dibuat sendiri oleh alat ini — arsip ZIP berisi XML, dimampatkan
+memakai `CompressionStream` bawaan browser — supaya tidak perlu pustaka dari luar
+dan alatnya tetap jalan tanpa internet. Satu lembar Excel menampung 1.048.575 baris
+data; bila terlampaui, berkas tetap dibuat sampai batas itu dan tombolnya memberi
+tahu bahwa hasilnya dipotong.
