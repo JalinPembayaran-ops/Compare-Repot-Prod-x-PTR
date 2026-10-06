@@ -249,7 +249,7 @@ def analyse(rel, a, b):
 
     if a['md5'] == b['md5']:
         r['status'] = 'IDENTIK'
-        r['note'] = 'Isi file sama persis (MD5 cocok).'
+        r['note'] = 'Sudah OK.'
         return r
 
     if max(a['size'], b['size']) > MAX_FULL_READ:
