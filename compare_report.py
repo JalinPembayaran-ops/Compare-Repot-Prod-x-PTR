@@ -328,6 +328,12 @@ h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
 .brand img{display:block;height:70px;width:auto}
 .brand .unit{margin-top:9px;font-size:12px;font-weight:600;letter-spacing:.09em;
   text-transform:uppercase;color:var(--tx2)}
+.verbtn{margin-left:10px;border:1px solid var(--line);background:var(--panel);
+  color:var(--tx2);border-radius:20px;padding:1px 9px;font-size:11px;font-weight:600;
+  cursor:pointer;font-family:var(--mono);vertical-align:1px}
+.verbtn:hover{border-color:var(--accent);color:var(--accent)}
+.vlog{margin:0 0 4px;padding-left:20px;font-size:12.5px;color:var(--tx2)}
+.vlog li{margin:2px 0}
 .sub{color:var(--tx2);font-size:13px}
 .roots{margin-top:12px;display:grid;gap:6px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
 .root{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:12px}
@@ -436,7 +442,7 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
 <div class="brand">
   <img src="data:image/png;base64,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"
        alt="Jalin, member of Danareksa" width="96" height="70">
-  <div class="unit">Backoffice Business Operation</div>
+  <div class="unit">Backoffice Business Operation<button class="verbtn" id="verBtn" title="Lihat riwayat versi">v1.5</button></div>
 </div>
   <h1>Perbandingan Report PTR vs Report Production</h1>
   <div class="sub" id="subtitle"></div>
@@ -694,6 +700,48 @@ function checkTypes(namesPtr, namesProd){
   return {rows:out};
 }
 
+/* ============================ versi dan riwayat perubahan ============================
+   Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
+   penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
+var APP_VERSION = '1.5';
+var CHANGELOG = [
+  ['1.5', '06 Okt 2026', [
+    'Nomor versi ditampilkan di kepala halaman beserta riwayat perubahannya.'
+  ]],
+  ['1.4', '06 Okt 2026', [
+    'Pemeriksaan kelengkapan 40 jenis report: Ada, Hanya di PTR, Hanya di Prod, atau Tidak ditemukan.',
+    'Unduhan ringkasan jadi dua sheet: Ringkasan dan Kelengkapan Report.',
+    'Keterangan berkas identik diringkas jadi "Sudah OK".'
+  ]],
+  ['1.3', '30 Sep 2026', [
+    'Logo Jalin dan nama unit dipasang di kepala halaman.'
+  ]],
+  ['1.2', '23 Sep 2026', [
+    'Hasil unduhan jadi berkas .xlsx, siap pakai di Excel.',
+    'Pemasangan baris tiga tahap, sehingga semua jenis report bisa diunduh.'
+  ]],
+  ['1.1', '11 Sep 2026', [
+    'Baris beda dipasangkan lewat isinya, bukan lewat posisi.',
+    'Tombol unduh rincian perbedaan per berkas.'
+  ]],
+  ['1.0', '02 Sep 2026', [
+    'Rilis awal: bandingkan satu berkas, banyak berkas, atau seluruh folder.',
+    'Analisa per kode report dan label kode report pada tiap baris beda.',
+    'Beda urutan baris diperlakukan sebagai cocok.'
+  ]]
+];
+
+function changelogHTML(){
+  return '<div class="detail-in">'
+    + CHANGELOG.map(function(v){
+        return '<div class="dhead">Versi ' + esc(v[0]) + ' &middot; ' + esc(v[1]) + '</div>'
+             + '<ul class="vlog">'
+             + v[2].map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('')
+             + '</ul>';
+      }).join('')
+    + '</div>';
+}
+
 function kodeTag(a,b){
   a = a || ''; b = (b===undefined) ? a : (b||'');
   if(!a && !b) return '';
@@ -827,6 +875,17 @@ function openDlg(r){
   document.body.style.overflow='hidden';
 }
 function closeDlg(){ modal.hidden=true; document.body.style.overflow=''; }
+document.getElementById('verBtn').onclick = function(){
+  document.getElementById('dlgTitle').innerHTML =
+    'Riwayat versi<small>Compare Report PTR vs Production</small>';
+  document.getElementById('dlgBadge').innerHTML =
+    '<span class="badge ok">v' + esc(APP_VERSION) + '</span>';
+  var dl = document.getElementById('dlPairs');
+  if(dl) dl.hidden = true;
+  document.getElementById('dlgBody').innerHTML = changelogHTML();
+  modal.hidden = false;
+  document.body.style.overflow = 'hidden';
+};
 document.getElementById('dlgClose').onclick=closeDlg;
 modal.onclick=function(e){ if(e.target===modal) closeDlg(); };
 document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&!modal.hidden) closeDlg(); });

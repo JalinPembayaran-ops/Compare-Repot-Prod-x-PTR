@@ -4,6 +4,9 @@ Alat bantu untuk memastikan report yang dihasilkan lingkungan **PTR** sama denga
 report **Production**. Membandingkan berkas report Fee Engine baris per baris,
 lalu melaporkan apa saja yang berbeda dan di **kode report** mana perbedaan itu berada.
 
+Nomor versi tampil di kepala halaman; klik lencananya untuk melihat riwayat
+perubahan. Daftar lengkapnya ada di [CHANGELOG.md](CHANGELOG.md).
+
 **Buka langsung di browser:**
 <https://jalinpembayaran-ops.github.io/Compare-Repot-Prod-x-PTR/>
 
