@@ -449,6 +449,10 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
 <div id="verdict"></div>
 <div class="kpis" id="kpis"></div>
 
+<h3 class="sec">Kelengkapan jenis report</h3>
+<div class="note" id="typeNote"></div>
+<div class="card tbl-scroll"><table id="byType"></table></div>
+
 <h3 class="sec">Ringkasan per folder</h3>
 <div class="card tbl-scroll"><table id="byFolder"></table></div>
 
@@ -479,6 +483,7 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
 /*__DATA__*/
 (function(){
 var D = window.__DATA__, rows = D.rows, meta = D.meta;
+var lastFiles = {ptr: meta.filesPtr || [], prod: meta.filesProd || []};
 var SM = {
   IDENTIK:['Identik','ok'], BEDA_FORMAT:['Beda format baris','warn'],
   BEDA_HEADER:['Beda header/jam','warn'],
@@ -521,6 +526,33 @@ var kpis=[['IDENTIK','Identik','ok'],['BEDA_DATA','Beda data','bad'],
 document.getElementById('kpis').innerHTML = kpis.map(function(k){
   return '<div class="kpi '+k[2]+'"><div class="n">'+cnt(k[0])+'</div><div class="l">'+k[1]+'</div></div>';
 }).join('');
+
+/* ---------------- kelengkapan jenis report ---------------- */
+  var T = checkTypes(lastFiles.ptr, lastFiles.prod);
+  var nAda = T.rows.filter(function(x){ return x.status === 'ADA'; }).length;
+  var nHilang = T.rows.filter(function(x){ return x.status === 'TIDAK_ADA'; }).length;
+  var nSebelah = T.rows.length - nAda - nHilang;
+
+  document.getElementById('typeNote').innerHTML =
+    '<b>' + nAda + '</b> dari <b>' + T.rows.length + '</b> jenis report ditemukan di kedua sisi'
+    + (nSebelah ? ' &middot; <b>' + nSebelah + '</b> hanya ada di satu sisi' : '')
+    + (nHilang ? ' &middot; <b>' + nHilang + '</b> tidak ditemukan sama sekali' : '')
+    + '.';
+
+  document.getElementById('byType').innerHTML =
+    '<thead><tr><th>Jenis Report</th><th class="num">PTR</th><th class="num">Prod</th>'
+    + '<th>Status</th><th>Contoh berkas</th></tr></thead><tbody>'
+    + T.rows.map(function(x){
+        var L = x.status === 'ADA'        ? ['Ada','ok']
+              : x.status === 'HANYA_PTR'  ? ['Hanya di PTR','ptr']
+              : x.status === 'HANYA_PROD' ? ['Hanya di Prod','prod']
+              : ['Tidak ditemukan','bad'];
+        return '<tr><td class="fname">' + esc(x.pat) + '</td>'
+             + '<td class="num">' + (x.ptr || '–') + '</td>'
+             + '<td class="num">' + (x.prod || '–') + '</td>'
+             + '<td><span class="badge ' + L[1] + '">' + L[0] + '</span></td>'
+             + '<td class="fdir">' + esc(x.contoh || '–') + '</td></tr>';
+      }).join('') + '</tbody>';
 
 var folders=[]; rows.forEach(function(r){if(folders.indexOf(r.folder)<0)folders.push(r.folder);});
 folders.sort();
@@ -568,6 +600,98 @@ function hl(a,b){
     return esc(t.slice(0,s))+'<mark>'+esc(t.slice(s,t.length-e))+'</mark>'+esc(t.slice(t.length-e));
   }
   return [wrap(a),wrap(b)];
+}
+
+/* ===================== daftar jenis report yang diharapkan =====================
+   Pola ditulis seperti penamaan berkas: XXX = kode bank, YYMMDD = tanggal,
+   YYMM = bulan. Sebagian pola ditulis tanpa '-MP' dan tanpa kode bank di
+   depan, jadi keduanya diperlakukan opsional saat mencocokkan.            */
+var REPORT_TYPES = [
+  'XXX-Report-Harian-LINK-YYMMDD',
+  'XXX-Report-Klaim-LINK-YYMMDD',
+  'XXX-Transaction-Data-YYMMDD',
+  'XXX-Transfer-Incomplete-YYMMDD',
+  'XXX-Report-Clearing-LINK-MP-YYMMDD',
+  'XXX-Report-ProAktif-Klaim-LINK-YYMMDD',
+  'XXX-Report-Harian-LINK-YYMMDD-NEW',
+  'XXX-Transaction-Data-YYMMDD-NEW',
+  'XXX-Report-Revenue-Sharing-Jalin-MP-YYMMDD',
+  'XXX-Report-Clearing-LINK-MP-Harian-YYMMDD',
+  'BSM-Report-Harian-LINK-MP-AND-YYMMDD',
+  'BSM-Transaction-Data-MP-AND-YYMMDD',
+  'GPY-Transaction-Data-MP-YYMMDD-SUCCESS',
+  'GPY-Transaction-Data-MP-YYMMDD-FAILED',
+  'BCA-Klaim-Lain-MP-YYMMDD',
+  'BCA-Switching-Fee-Harian-Data-MP-YYMMDD',
+  'BCA-Netting-MP-YYMMDD',
+  'BCA-Detail-Settlement-MP-YYMMDD',
+  'Fee-Marketing-MP-YYMMDD',
+  'Laporan-Fee-Marketing-MP-YYMMDD',
+  'XXX-Report-Revenue-Sharing-Jalin-MP-YYMM',
+  'XXX-Report-Revenue-Sharing-Jalin-MP-BNF-YYMM',
+  'REVENUE_HARIAN_JALN_XXX_YYMMDD',
+  'SETTLE_JALN_ALTO_YYMMDD_ACQ',
+  'SETTLE_JALN_ALTO_YYMMDD_BNF',
+  'SETTLE_JALN_ARTA_YYMMDD_ACQ',
+  'SETTLE_JALN_ARTA_YYMMDD_BNF',
+  'RECON_JALN_ARTA_YYMMDD',
+  'DISPUTE_JALN_ALTO_YYMMDD_BNF',
+  'DISPUTE_JALN_ALTO_YYMMDD_ACQ',
+  'DISPUTE_JALN_ARTA_YYMMDD_BNF',
+  'DISPUTE_JALN_ARTA_YYMMDD_ACQ',
+  'XXX-Report-Harian-LINK-MP-CLAIM-INTERKONEKSI-YYMMDD',
+  'NET_SETTLE_ALTO_YYMMDD.xls',
+  'NET_SETTLE_ARTA_YYMMDD.xls',
+  'XXX-Report-Revenue-Sharing-Jalin-MP-BNF-YYMMDD',
+  'BTN-Report-Harian-LINK-MP-YYMMDD',
+  'BTN-Transaction-Data-MP-YYMMDD',
+  'BTN-Transfer-Incomplete-MP-YYMMDD',
+  'ATMMP-Daily-Summary-YYMMDD.xls'
+];
+
+var BANKRX = '[A-Za-z0-9]{3}';
+function rxEsc(s){ return s.replace(/[.*+?^${}()|[\]\\\-]/g, '\\$&'); }
+
+function typeRegex(pat){
+  var p = pat, ext = '', m = /(\.[A-Za-z0-9]+)$/.exec(p);
+  if(m){ ext = m[1]; p = p.slice(0, m.index); }
+  var hasMp = (p.indexOf('-MP-') >= 0) || /-MP$/.test(p);
+  var bankAwal = (p.indexOf('XXX') === 0) || /^[A-Z]{3}-/.test(p);
+  var out = '', i = 0;
+  while(i < p.length){
+    if(!hasMp && p.substr(i, 7) === '-YYMMDD'){ out += '(?:\\-MP)?\\-\\d{6}'; i += 7; }
+    else if(!hasMp && p.substr(i, 5) === '-YYMM'){ out += '(?:\\-MP)?\\-\\d{4}'; i += 5; }
+    else if(p.substr(i, 6) === 'YYMMDD'){ out += '\\d{6}'; i += 6; }
+    else if(p.substr(i, 4) === 'YYMM'){ out += '\\d{4}'; i += 4; }
+    else if(p.substr(i, 3) === 'XXX'){ out += BANKRX; i += 3; }
+    else { out += rxEsc(p.charAt(i)); i += 1; }
+  }
+  if(!bankAwal) out = '(?:' + BANKRX + '\\-)?' + out;
+  var tail = ext ? rxEsc(ext) : '(?:\\.(?:txt|xls|xlsx|csv|gz|zip))?';
+  return new RegExp('^' + out + tail + '$', 'i');
+}
+
+var TYPE_RX = null;
+function typeRx(){
+  if(!TYPE_RX) TYPE_RX = REPORT_TYPES.map(function(p){
+    return {pat:p, rx:typeRegex(p)};
+  });
+  return TYPE_RX;
+}
+
+/* Periksa tiap jenis report: ada di PTR, ada di Production, atau tidak ada
+   sama sekali. Berkas yang tidak tercakup pola mana pun juga dilaporkan,
+   supaya tidak ada yang diam-diam terlewat. */
+function checkTypes(namesPtr, namesProd){
+  var defs = typeRx(), out = [];
+  defs.forEach(function(d){
+    var a = 0, b = 0, contoh = '';
+    namesPtr.forEach(function(n){ if(d.rx.test(n)){ a++; if(!contoh) contoh = n; } });
+    namesProd.forEach(function(n){ if(d.rx.test(n)){ b++; if(!contoh) contoh = n; } });
+    out.push({pat:d.pat, ptr:a, prod:b, contoh:contoh,
+              status: (a && b) ? 'ADA' : a ? 'HANYA_PTR' : b ? 'HANYA_PROD' : 'TIDAK_ADA'});
+  });
+  return {rows:out};
 }
 
 function kodeTag(a,b){
@@ -787,6 +911,8 @@ def main():
     rows.sort(key=lambda r: (order[r['status']], r['path']))
 
     meta = {'rootPtr': ptr, 'rootProd': prod,
+            'filesPtr': sorted(k.split('/')[-1] for k in A),
+            'filesProd': sorted(k.split('/')[-1] for k in B),
             'label': a.label or os.path.basename(ptr.rstrip('\\/')),
             'generated': datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
 

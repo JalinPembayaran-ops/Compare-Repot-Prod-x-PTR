@@ -231,6 +231,10 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
     <div id="verdict"></div>
     <div class="kpis" id="kpis"></div>
 
+    <h3 class="sec">Kelengkapan jenis report</h3>
+    <div class="note" id="typeNote"></div>
+    <div class="card tbl-scroll"><table id="byType"></table></div>
+    
     <h3 class="sec">Ringkasan per folder</h3>
     <div class="card tbl-scroll"><table id="byFolder"></table></div>
 
@@ -503,6 +507,98 @@ function diffRange(a, b){
   return {start:s, endA:a.length - e, endB:b.length - e};
 }
 
+/* ===================== daftar jenis report yang diharapkan =====================
+   Pola ditulis seperti penamaan berkas: XXX = kode bank, YYMMDD = tanggal,
+   YYMM = bulan. Sebagian pola ditulis tanpa '-MP' dan tanpa kode bank di
+   depan, jadi keduanya diperlakukan opsional saat mencocokkan.            */
+var REPORT_TYPES = [
+  'XXX-Report-Harian-LINK-YYMMDD',
+  'XXX-Report-Klaim-LINK-YYMMDD',
+  'XXX-Transaction-Data-YYMMDD',
+  'XXX-Transfer-Incomplete-YYMMDD',
+  'XXX-Report-Clearing-LINK-MP-YYMMDD',
+  'XXX-Report-ProAktif-Klaim-LINK-YYMMDD',
+  'XXX-Report-Harian-LINK-YYMMDD-NEW',
+  'XXX-Transaction-Data-YYMMDD-NEW',
+  'XXX-Report-Revenue-Sharing-Jalin-MP-YYMMDD',
+  'XXX-Report-Clearing-LINK-MP-Harian-YYMMDD',
+  'BSM-Report-Harian-LINK-MP-AND-YYMMDD',
+  'BSM-Transaction-Data-MP-AND-YYMMDD',
+  'GPY-Transaction-Data-MP-YYMMDD-SUCCESS',
+  'GPY-Transaction-Data-MP-YYMMDD-FAILED',
+  'BCA-Klaim-Lain-MP-YYMMDD',
+  'BCA-Switching-Fee-Harian-Data-MP-YYMMDD',
+  'BCA-Netting-MP-YYMMDD',
+  'BCA-Detail-Settlement-MP-YYMMDD',
+  'Fee-Marketing-MP-YYMMDD',
+  'Laporan-Fee-Marketing-MP-YYMMDD',
+  'XXX-Report-Revenue-Sharing-Jalin-MP-YYMM',
+  'XXX-Report-Revenue-Sharing-Jalin-MP-BNF-YYMM',
+  'REVENUE_HARIAN_JALN_XXX_YYMMDD',
+  'SETTLE_JALN_ALTO_YYMMDD_ACQ',
+  'SETTLE_JALN_ALTO_YYMMDD_BNF',
+  'SETTLE_JALN_ARTA_YYMMDD_ACQ',
+  'SETTLE_JALN_ARTA_YYMMDD_BNF',
+  'RECON_JALN_ARTA_YYMMDD',
+  'DISPUTE_JALN_ALTO_YYMMDD_BNF',
+  'DISPUTE_JALN_ALTO_YYMMDD_ACQ',
+  'DISPUTE_JALN_ARTA_YYMMDD_BNF',
+  'DISPUTE_JALN_ARTA_YYMMDD_ACQ',
+  'XXX-Report-Harian-LINK-MP-CLAIM-INTERKONEKSI-YYMMDD',
+  'NET_SETTLE_ALTO_YYMMDD.xls',
+  'NET_SETTLE_ARTA_YYMMDD.xls',
+  'XXX-Report-Revenue-Sharing-Jalin-MP-BNF-YYMMDD',
+  'BTN-Report-Harian-LINK-MP-YYMMDD',
+  'BTN-Transaction-Data-MP-YYMMDD',
+  'BTN-Transfer-Incomplete-MP-YYMMDD',
+  'ATMMP-Daily-Summary-YYMMDD.xls'
+];
+
+var BANKRX = '[A-Za-z0-9]{3}';
+function rxEsc(s){ return s.replace(/[.*+?^${}()|[\]\\\-]/g, '\\$&'); }
+
+function typeRegex(pat){
+  var p = pat, ext = '', m = /(\.[A-Za-z0-9]+)$/.exec(p);
+  if(m){ ext = m[1]; p = p.slice(0, m.index); }
+  var hasMp = (p.indexOf('-MP-') >= 0) || /-MP$/.test(p);
+  var bankAwal = (p.indexOf('XXX') === 0) || /^[A-Z]{3}-/.test(p);
+  var out = '', i = 0;
+  while(i < p.length){
+    if(!hasMp && p.substr(i, 7) === '-YYMMDD'){ out += '(?:\\-MP)?\\-\\d{6}'; i += 7; }
+    else if(!hasMp && p.substr(i, 5) === '-YYMM'){ out += '(?:\\-MP)?\\-\\d{4}'; i += 5; }
+    else if(p.substr(i, 6) === 'YYMMDD'){ out += '\\d{6}'; i += 6; }
+    else if(p.substr(i, 4) === 'YYMM'){ out += '\\d{4}'; i += 4; }
+    else if(p.substr(i, 3) === 'XXX'){ out += BANKRX; i += 3; }
+    else { out += rxEsc(p.charAt(i)); i += 1; }
+  }
+  if(!bankAwal) out = '(?:' + BANKRX + '\\-)?' + out;
+  var tail = ext ? rxEsc(ext) : '(?:\\.(?:txt|xls|xlsx|csv|gz|zip))?';
+  return new RegExp('^' + out + tail + '$', 'i');
+}
+
+var TYPE_RX = null;
+function typeRx(){
+  if(!TYPE_RX) TYPE_RX = REPORT_TYPES.map(function(p){
+    return {pat:p, rx:typeRegex(p)};
+  });
+  return TYPE_RX;
+}
+
+/* Periksa tiap jenis report: ada di PTR, ada di Production, atau tidak ada
+   sama sekali. Berkas yang tidak tercakup pola mana pun juga dilaporkan,
+   supaya tidak ada yang diam-diam terlewat. */
+function checkTypes(namesPtr, namesProd){
+  var defs = typeRx(), out = [];
+  defs.forEach(function(d){
+    var a = 0, b = 0, contoh = '';
+    namesPtr.forEach(function(n){ if(d.rx.test(n)){ a++; if(!contoh) contoh = n; } });
+    namesProd.forEach(function(n){ if(d.rx.test(n)){ b++; if(!contoh) contoh = n; } });
+    out.push({pat:d.pat, ptr:a, prod:b, contoh:contoh,
+              status: (a && b) ? 'ADA' : a ? 'HANYA_PTR' : b ? 'HANYA_PROD' : 'TIDAK_ADA'});
+  });
+  return {rows:out};
+}
+
 function maskKey(t){
   var k = t.slice(0, KEYLEN).replace(/[0-9]/g, '#');
   return (k.replace(/\s/g,'').length >= 12) ? k : null;
@@ -739,7 +835,7 @@ function pairUp(a, b){
   return {pairs:pairs, onlyA:onlyA, onlyB:onlyB};
 }
 
-var cancelled = false, rows = [];
+var cancelled = false, rows = [], lastFiles = {ptr:[], prod:[]};
 
 function compare(){
   cancelled = false;
@@ -747,6 +843,7 @@ function compare(){
   var LIMIT = limitMB * 1024 * 1024;
   var trim = document.getElementById('optTrim').checked;
   var m = pairUp(picked.ptr, picked.prod);
+  lastFiles = {ptr:picked.ptr.map(nameOf), prod:picked.prod.map(nameOf)};
   rows = [];
 
   m.onlyA.forEach(function(f){
@@ -866,6 +963,33 @@ var orderTxt = nOrder ? ' Termasuk <b>'+nOrder+'</b> file yang isinya sudah coco
   document.getElementById('kpis').innerHTML = kpis.map(function(k){
     return '<div class="kpi '+k[2]+'"><div class="n">'+cnt(k[0])+'</div><div class="l">'+k[1]+'</div></div>';
   }).join('');
+
+/* ---------------- kelengkapan jenis report ---------------- */
+  var T = checkTypes(lastFiles.ptr, lastFiles.prod);
+  var nAda = T.rows.filter(function(x){ return x.status === 'ADA'; }).length;
+  var nHilang = T.rows.filter(function(x){ return x.status === 'TIDAK_ADA'; }).length;
+  var nSebelah = T.rows.length - nAda - nHilang;
+
+  document.getElementById('typeNote').innerHTML =
+    '<b>' + nAda + '</b> dari <b>' + T.rows.length + '</b> jenis report ditemukan di kedua sisi'
+    + (nSebelah ? ' &middot; <b>' + nSebelah + '</b> hanya ada di satu sisi' : '')
+    + (nHilang ? ' &middot; <b>' + nHilang + '</b> tidak ditemukan sama sekali' : '')
+    + '.';
+
+  document.getElementById('byType').innerHTML =
+    '<thead><tr><th>Jenis Report</th><th class="num">PTR</th><th class="num">Prod</th>'
+    + '<th>Status</th><th>Contoh berkas</th></tr></thead><tbody>'
+    + T.rows.map(function(x){
+        var L = x.status === 'ADA'        ? ['Ada','ok']
+              : x.status === 'HANYA_PTR'  ? ['Hanya di PTR','ptr']
+              : x.status === 'HANYA_PROD' ? ['Hanya di Prod','prod']
+              : ['Tidak ditemukan','bad'];
+        return '<tr><td class="fname">' + esc(x.pat) + '</td>'
+             + '<td class="num">' + (x.ptr || '–') + '</td>'
+             + '<td class="num">' + (x.prod || '–') + '</td>'
+             + '<td><span class="badge ' + L[1] + '">' + L[0] + '</span></td>'
+             + '<td class="fdir">' + esc(x.contoh || '–') + '</td></tr>';
+      }).join('') + '</tbody>';
 
   folders = [];
   rows.forEach(function(r){ if(folders.indexOf(r.folder)<0) folders.push(r.folder); });
@@ -1207,60 +1331,72 @@ function colName(i){
   return s;
 }
 
-/* cols: [{t:judul, w:lebar, num:true bila angka, mono:true bila huruf rata}] */
-function xlsxBlob(cols, rows, sheetName){
-  var n = Math.min(rows.length, XLSX_MAX_ROWS);
-  var last = colName(cols.length - 1), dim = 'A1:' + last + (n + 1);
+/* sheets: [{name, cols, rows}]
+   cols:   [{t:judul, w:lebar, num:true bila angka, mono:true bila huruf rata}] */
+function sheetNameSafe(n, i){
+  n = String(n || ('Sheet' + (i + 1))).replace(/[\[\]:*?\/\\]/g, ' ').trim();
+  return n.slice(0, 31) || ('Sheet' + (i + 1));
+}
 
-  var head =
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-    + '<dimension ref="' + dim + '"/>'
-    + '<sheetViews><sheetView tabSelected="1" workbookViewId="0">'
-    + '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
-    + '</sheetView></sheetViews>'
-    + '<sheetFormatPr defaultRowHeight="15"/><cols>'
-    + cols.map(function(c, i){
-        return '<col min="' + (i+1) + '" max="' + (i+1) + '" width="' + c.w
-             + '" customWidth="1"' + (c.mono ? ' style="2"' : '') + '/>';
-      }).join('')
-    + '</cols><sheetData><row r="1">'
-    + cols.map(function(c, i){
-        return '<c r="' + colName(i) + '1" t="inlineStr" s="1"><is><t>'
-             + xmlEsc(c.t) + '</t></is></c>';
-      }).join('')
-    + '</row>';
+function xlsxBook(sheets){
+  var parts = [], totalRows = 0, dipotong = false;
 
-  var foot = '</sheetData><autoFilter ref="' + dim + '"/></worksheet>';
+  sheets.forEach(function(sh, idx){
+    var cols = sh.cols, rows = sh.rows || [];
+    var n = Math.min(rows.length, XLSX_MAX_ROWS);
+    totalRows += n;
+    if(rows.length > n) dipotong = true;
 
-  function rowXml(vals, idx){
-    var r = idx + 2, cells = '', i, v, ref;
-    for(i=0;i<cols.length;i++){
-      v = vals[i];
-      if(v === null || v === undefined || v === '') continue;
-      ref = colName(i) + r;
-      if(cols[i].num && v !== '' && isFinite(v))
-        cells += '<c r="' + ref + '"><v>' + v + '</v></c>';
-      else
-        cells += '<c r="' + ref + '" t="inlineStr"'
-               + (cols[i].mono ? ' s="2"' : '') + '><is><t xml:space="preserve">'
-               + xmlEsc(v) + '</t></is></c>';
+    var last = colName(cols.length - 1), dim = 'A1:' + last + (n + 1);
+    var head =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      + '<dimension ref="' + dim + '"/>'
+      + '<sheetViews><sheetView' + (idx === 0 ? ' tabSelected="1"' : '') + ' workbookViewId="0">'
+      + '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+      + '</sheetView></sheetViews>'
+      + '<sheetFormatPr defaultRowHeight="15"/><cols>'
+      + cols.map(function(c, i){
+          return '<col min="' + (i+1) + '" max="' + (i+1) + '" width="' + c.w
+               + '" customWidth="1"' + (c.mono ? ' style="2"' : '') + '/>';
+        }).join('')
+      + '</cols><sheetData><row r="1">'
+      + cols.map(function(c, i){
+          return '<c r="' + colName(i) + '1" t="inlineStr" s="1"><is><t>'
+               + xmlEsc(c.t) + '</t></is></c>';
+        }).join('')
+      + '</row>';
+    var foot = '</sheetData><autoFilter ref="' + dim + '"/></worksheet>';
+
+    function rowXml(vals, k){
+      var r = k + 2, cells = '', i, v, ref;
+      for(i=0;i<cols.length;i++){
+        v = vals[i];
+        if(v === null || v === undefined || v === '') continue;
+        ref = colName(i) + r;
+        if(cols[i].num && isFinite(v))
+          cells += '<c r="' + ref + '"><v>' + v + '</v></c>';
+        else
+          cells += '<c r="' + ref + '" t="inlineStr"'
+                 + (cols[i].mono ? ' s="2"' : '') + '><is><t xml:space="preserve">'
+                 + xmlEsc(v) + '</t></is></c>';
+      }
+      return '<row r="' + r + '">' + cells + '</row>';
     }
-    return '<row r="' + r + '">' + cells + '</row>';
-  }
 
-  var sheet = zipEntry('xl/worksheets/sheet1.xml', function(write){
-    var i = 0;
-    function step(){
-      var buf = [], k = 0;
-      while(i < n && k < 2000){ buf.push(rowXml(rows[i], i)); i++; k++; }
-      return write(XENC.encode(buf.join(''))).then(function(){
-        if(i < n) return step();
+    parts.push(zipEntry('xl/worksheets/sheet' + (idx + 1) + '.xml', function(write){
+      var i = 0;
+      function step(){
+        var buf = [], k = 0;
+        while(i < n && k < 2000){ buf.push(rowXml(rows[i], i)); i++; k++; }
+        return write(XENC.encode(buf.join(''))).then(function(){
+          if(i < n) return step();
+        });
+      }
+      return write(XENC.encode(head)).then(step).then(function(){
+        return write(XENC.encode(foot));
       });
-    }
-    return write(XENC.encode(head)).then(step).then(function(){
-      return write(XENC.encode(foot));
-    });
+    }));
   });
 
   var CT = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -1268,7 +1404,10 @@ function xlsxBlob(cols, rows, sheetName){
     + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
     + '<Default Extension="xml" ContentType="application/xml"/>'
     + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-    + '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+    + sheets.map(function(sh, i){
+        return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml"'
+             + ' ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+      }).join('')
     + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
     + '</Types>';
 
@@ -1280,13 +1419,23 @@ function xlsxBlob(cols, rows, sheetName){
   var WB = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
     + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-    + '<sheets><sheet name="' + xmlEsc(sheetName || 'Perbedaan')
-    + '" sheetId="1" r:id="rId1"/></sheets></workbook>';
+    + '<sheets>'
+    + sheets.map(function(sh, i){
+        return '<sheet name="' + xmlEsc(sheetNameSafe(sh.name, i))
+             + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>';
+      }).join('')
+    + '</sheets></workbook>';
 
   var WBR = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
-    + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+    + sheets.map(function(sh, i){
+        return '<Relationship Id="rId' + (i + 1) + '"'
+             + ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"'
+             + ' Target="worksheets/sheet' + (i + 1) + '.xml"/>';
+      }).join('')
+    + '<Relationship Id="rId' + (sheets.length + 1) + '"'
+    + ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"'
+    + ' Target="styles.xml"/>'
     + '</Relationships>';
 
   var ST = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -1321,11 +1470,14 @@ function xlsxBlob(cols, rows, sheetName){
     zipText('_rels/.rels', RELS),
     zipText('xl/workbook.xml', WB),
     zipText('xl/_rels/workbook.xml.rels', WBR),
-    zipText('xl/styles.xml', ST),
-    sheet
-  ]).then(function(entries){
-    return {blob:buildZip(entries), rows:n, dipotong:rows.length > n};
+    zipText('xl/styles.xml', ST)
+  ].concat(parts)).then(function(entries){
+    return {blob:buildZip(entries), rows:totalRows, dipotong:dipotong};
   });
+}
+
+function xlsxBlob(cols, rows, sheetName){
+  return xlsxBook([{name:sheetName, cols:cols, rows:rows}]);
 }
 
 function csvCell(v){
@@ -1429,6 +1581,7 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape'&&!modal.hi
 document.getElementById('csv').onclick = function(){
   var btn = document.getElementById('csv'), label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Menyiapkan...';
+
   var COLS = [
     {t:'Folder',              w:24},
     {t:'File',                w:46, mono:true},
@@ -1448,7 +1601,26 @@ document.getElementById('csv').onclick = function(){
             r.sizePtr, r.sizeProd, r.linesPtr, r.linesProd,
             r.onlyPtrRows, r.onlyProdRows, r.eolPtr || '', r.eolProd || '', r.note];
   });
-  xlsxBlob(COLS, data, 'Ringkasan').then(function(res){
+
+  /* kelengkapan jenis report ikut diunduh, di sheet tersendiri */
+  var T = checkTypes(lastFiles.ptr, lastFiles.prod);
+  var LABEL = {ADA:'Ada', HANYA_PTR:'Hanya di PTR',
+               HANYA_PROD:'Hanya di Prod', TIDAK_ADA:'Tidak ditemukan'};
+  var COLS_T = [
+    {t:'Jenis Report',  w:52, mono:true},
+    {t:'PTR',           w:8,  num:true},
+    {t:'Prod',          w:8,  num:true},
+    {t:'Status',        w:18},
+    {t:'Contoh Berkas', w:48, mono:true}
+  ];
+  var dataT = T.rows.map(function(x){
+    return [x.pat, x.ptr, x.prod, LABEL[x.status], x.contoh];
+  });
+
+  xlsxBook([
+    {name:'Ringkasan',          cols:COLS,   rows:data},
+    {name:'Kelengkapan Report', cols:COLS_T, rows:dataT}
+  ]).then(function(res){
     saveBlob(res.blob, 'ringkasan-ptr-vs-prod.xlsx');
     btn.textContent = label; btn.disabled = false;
   }).catch(function(err){

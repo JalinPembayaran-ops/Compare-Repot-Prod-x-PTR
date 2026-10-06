@@ -110,6 +110,29 @@ Untuk report yang memuat baris `KODE REPORT`, detail tiap berkas menampilkan:
 Angka pada tabel per kode dijumlah tepat sama dengan total baris berbeda di
 ringkasan, jadi bisa dipakai menelusuri tanpa khawatir ada yang terlewat.
 
+## Kelengkapan jenis report
+
+Selain membandingkan isi, alat ini memeriksa apakah **seluruh jenis report yang
+seharusnya terbit memang ada**. Daftar jenisnya tersimpan di `REPORT_TYPES`
+di dalam `index.html`, ditulis seperti penamaan berkas:
+
+```
+XXX-Report-Harian-LINK-YYMMDD
+BCA-Netting-MP-YYMMDD
+SETTLE_JALN_ALTO_YYMMDD_ACQ
+ATMMP-Daily-Summary-YYMMDD.xls
+```
+
+`XXX` berarti kode bank apa pun, `YYMMDD` tanggal, `YYMM` bulan. Sebagian pola
+ditulis tanpa `-MP` dan tanpa kode bank di depan; keduanya diperlakukan opsional
+saat mencocokkan, jadi `XXX-Transaction-Data-YYMMDD` tetap menemukan berkas
+`AGR-Transaction-Data-MP-261006.txt`.
+
+Tiap jenis dilaporkan dengan status **Ada**, **Hanya di PTR**, **Hanya di Prod**,
+atau **Tidak ditemukan**, lengkap dengan jumlah berkas di tiap sisi dan satu
+contoh nama berkas. Menambah atau mengubah jenis report cukup dengan menyunting
+daftar `REPORT_TYPES` tersebut.
+
 ## Mengunduh rincian perbedaan
 
 Di dalam detail tiap berkas ada tombol **Unduh Excel**. Berkasnya memuat **seluruh**
@@ -131,7 +154,8 @@ kolom disetel, kolom isi report memakai huruf rata supaya kolom laporan tetap lu
 dan nomor baris ditulis sebagai angka sehingga bisa diurutkan dengan benar.
 
 Ringkasan per berkas juga bisa diunduh lewat tombol **Unduh Excel** di bawah tombol
-Bandingkan.
+Bandingkan. Berkasnya berisi dua sheet: **Ringkasan** (perbandingan per berkas) dan
+**Kelengkapan Report** (daftar jenis report beserta statusnya).
 
 Berkas `.xlsx` dibuat sendiri oleh alat ini — arsip ZIP berisi XML, dimampatkan
 memakai `CompressionStream` bawaan browser — supaya tidak perlu pustaka dari luar
