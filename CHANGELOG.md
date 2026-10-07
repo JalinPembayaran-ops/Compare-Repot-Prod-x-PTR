@@ -7,6 +7,13 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 1.7 — 07 Oktober 2026
+
+- Ekstensi pada pola tidak lagi dituntut persis. Pola `.xls` tetap menemukan
+  berkas `.xlsx`, dan sebaliknya. Sebelumnya `NET_SETTLE_ALTO_YYMMDD.xls` dan
+  `NET_SETTLE_ARTA_YYMMDD.xls` terbaca "Tidak ditemukan" padahal berkasnya ada,
+  hanya berekstensi `.xlsx`.
+
 ## 1.6 — 07 Oktober 2026
 
 - Jenis report `RECON_JALN_ALTO_YYMMDD` ditambahkan ke daftar kelengkapan,

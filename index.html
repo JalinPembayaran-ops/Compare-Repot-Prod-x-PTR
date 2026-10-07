@@ -579,7 +579,9 @@ function typeRegex(pat){
     else { out += rxEsc(p.charAt(i)); i += 1; }
   }
   if(!bankAwal) out = '(?:' + BANKRX + '\\-)?' + out;
-  var tail = ext ? rxEsc(ext) : '(?:\\.(?:txt|xls|xlsx|csv|gz|zip))?';
+  /* Ekstensi yang ditulis di pola hanya petunjuk, tidak dituntut persis:
+     pola '.xls' tetap menemukan berkas '.xlsx', dan sebaliknya. */
+  var tail = '(?:\\.(?:txt|xls|xlsx|csv|gz|zip))?';
   return new RegExp('^' + out + tail + '$', 'i');
 }
 
@@ -609,8 +611,13 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '1.6';
+var APP_VERSION = '1.7';
 var CHANGELOG = [
+  ['1.7', '07 Okt 2026', [
+    'Ekstensi pada pola tidak lagi dituntut persis, sehingga pola .xls tetap '
+      + 'menemukan berkas .xlsx - sebelumnya NET_SETTLE_ALTO dan NET_SETTLE_ARTA '
+      + 'terbaca Tidak ditemukan padahal berkasnya ada.'
+  ]],
   ['1.6', '07 Okt 2026', [
     'Jenis report RECON_JALN_ALTO_YYMMDD ditambahkan ke daftar kelengkapan.'
   ]],
