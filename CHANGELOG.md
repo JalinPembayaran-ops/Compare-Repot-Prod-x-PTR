@@ -7,6 +7,14 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 1.8 — 07 Oktober 2026
+
+- Jenis report `NET_SETTLE_RNTS_YYMMDD` ditambahkan, melengkapi varian ALTO
+  dan ARTA yang sudah ada. Daftar kelengkapan kini 42 jenis.
+- Kode di depan pola boleh 3 atau 4 huruf. Sebelumnya `XXX` dipatok tepat tiga
+  huruf, sehingga `REVENUE_HARIAN_JALN_XXX_YYMMDD` tidak pernah menemukan
+  ALTO, ARTA maupun RNTS. Pola itu kini mencakup 39 berkas.
+
 ## 1.7 — 07 Oktober 2026
 
 - Ekstensi pada pola tidak lagi dituntut persis. Pola `.xls` tetap menemukan

@@ -554,6 +554,7 @@ var REPORT_TYPES = [
   'XXX-Report-Harian-LINK-MP-CLAIM-INTERKONEKSI-YYMMDD',
   'NET_SETTLE_ALTO_YYMMDD.xls',
   'NET_SETTLE_ARTA_YYMMDD.xls',
+  'NET_SETTLE_RNTS_YYMMDD.xlsx',
   'XXX-Report-Revenue-Sharing-Jalin-MP-BNF-YYMMDD',
   'BTN-Report-Harian-LINK-MP-YYMMDD',
   'BTN-Transaction-Data-MP-YYMMDD',
@@ -561,7 +562,9 @@ var REPORT_TYPES = [
   'ATMMP-Daily-Summary-YYMMDD.xls'
 ];
 
-var BANKRX = '[A-Za-z0-9]{3}';
+/* Kode di depan bisa kode bank 3 huruf (AGR, BCA) maupun nama switch
+   4 huruf (ALTO, ARTA, RNTS), jadi keduanya diterima. */
+var BANKRX = '[A-Za-z0-9]{3,4}';
 function rxEsc(s){ return s.replace(/[.*+?^${}()|[\]\\\-]/g, '\\$&'); }
 
 function typeRegex(pat){
@@ -611,8 +614,14 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '1.7';
+var APP_VERSION = '1.8';
 var CHANGELOG = [
+  ['1.8', '07 Okt 2026', [
+    'Jenis report NET_SETTLE_RNTS_YYMMDD ditambahkan.',
+    'Kode di depan pola boleh 3 atau 4 huruf, sehingga '
+      + 'REVENUE_HARIAN_JALN_XXX_YYMMDD kini menemukan ALTO, ARTA dan RNTS '
+      + 'yang sebelumnya terlewat karena XXX dipatok tepat 3 huruf.'
+  ]],
   ['1.7', '07 Okt 2026', [
     'Ekstensi pada pola tidak lagi dituntut persis, sehingga pola .xls tetap '
       + 'menemukan berkas .xlsx - sebelumnya NET_SETTLE_ALTO dan NET_SETTLE_ARTA '
