@@ -7,6 +7,13 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 1.6 — 07 Oktober 2026
+
+- Jenis report `RECON_JALN_ALTO_YYMMDD` ditambahkan ke daftar kelengkapan,
+  melengkapi `RECON_JALN_ARTA_YYMMDD` yang sudah ada.
+- Lencana versi di halaman diisi dari `APP_VERSION`, bukan ditulis tangan,
+  supaya angkanya tidak bisa lagi menyimpang dari nilai sebenarnya.
+
 ## 1.5 — 06 Oktober 2026
 
 - Nomor versi ditampilkan di kepala halaman beserta riwayat perubahannya.
