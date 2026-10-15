@@ -7,7 +7,8 @@ Pemakaian:
     py compare_report.py
     py compare_report.py "<folder PTR>" "<folder Prod>" -o hasil.html
 """
-import os, re, sys, json, hashlib, argparse
+import os, re, sys, json, hashlib, argparse, zipfile, io
+import xml.etree.ElementTree as ET
 from collections import Counter
 from datetime import datetime
 
@@ -136,6 +137,84 @@ def read_lines(path):
     return [ln.rstrip() for ln in lines], eol
 
 
+NS_MAIN = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+NS_REL = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+BINER_EXT = ('.xls', '.gz', '.zip', '.png', '.jpg', '.jpeg', '.pdf')
+
+
+def xlsx_to_text(data):
+    """Ubah isi .xlsx jadi baris per baris sel.
+
+    Berkas .xlsx sebenarnya arsip ZIP berisi XML, jadi membandingkannya
+    sebagai teks biasa hanya menghasilkan sampah biner."""
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+        nama = set(z.namelist())
+        if 'xl/workbook.xml' not in nama:
+            return None
+
+        peta = {}
+        if 'xl/_rels/workbook.xml.rels' in nama:
+            for r in ET.fromstring(z.read('xl/_rels/workbook.xml.rels')):
+                peta[r.get('Id')] = r.get('Target')
+
+        ss = []
+        if 'xl/sharedStrings.xml' in nama:
+            for si in ET.fromstring(z.read('xl/sharedStrings.xml')):
+                ss.append(''.join(t.text or '' for t in si.iter(NS_MAIN + 't')))
+
+        out = []
+        for sh in ET.fromstring(z.read('xl/workbook.xml')).iter(NS_MAIN + 'sheet'):
+            nm = sh.get('name') or 'Sheet'
+            tgt = peta.get(sh.get(NS_REL + 'id'), '')
+            if not tgt:
+                continue
+            tgt = tgt[1:] if tgt.startswith('/') else (
+                tgt if tgt.startswith('xl/') else 'xl/' + tgt)
+            if tgt not in nama:
+                continue
+            out.append('=== %s ===' % nm)
+            for row in ET.fromstring(z.read(tgt)).iter(NS_MAIN + 'row'):
+                sel = []
+                for c in row.iter(NS_MAIN + 'c'):
+                    t = c.get('t')
+                    if t == 'inlineStr':
+                        e = c.find(NS_MAIN + 'is/' + NS_MAIN + 't')
+                        v = e.text if e is not None else ''
+                    else:
+                        e = c.find(NS_MAIN + 'v')
+                        v = e.text if e is not None else ''
+                        if t == 's' and v is not None and v.isdigit():
+                            v = ss[int(v)] if int(v) < len(ss) else ''
+                    if v:
+                        sel.append('%s=%s' % (c.get('r'), v))
+                if sel:
+                    out.append('%s baris %s  %s' % (nm, row.get('r'), '  |  '.join(sel)))
+        return chr(10).join(out) if out else None
+    except Exception:
+        return None
+
+
+def read_for_compare(path):
+    """Baca berkas untuk dibandingkan: teks biasa, lembar kerja, atau biner."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    low = path.lower()
+    if low.endswith(('.xlsx', '.xlsm')):
+        teks = xlsx_to_text(data)
+        if teks is None:
+            return None, None, 'lembar kerja tidak terbaca'
+        return teks.split(chr(10)), None, None
+    if low.endswith(BINER_EXT) or b'\x00' in data[:8192]:
+        ext = low.rsplit('.', 1)[-1] if '.' in low else '-'
+        return None, None, 'format biner (%s)' % ext
+    eol = line_ending(data)
+    lines = data.decode('latin-1').split(chr(10))
+    if lines and lines[-1] == '':
+        lines.pop()
+    return [ln.rstrip() for ln in lines], eol, None
+
+
 def trunc(s):
     return s[:LINE_TRUNC] + ' ...' if len(s) > LINE_TRUNC else s
 
@@ -148,36 +227,104 @@ def key_of(t):
     return k if len(k.replace(' ', '')) >= 12 else None
 
 
-def pair_by_content(r, la, lb, only_a, only_b, sa, sb):
-    """Pasangkan baris beda lewat kunci isi (awal baris), bukan lewat posisi,
-    supaya transaksi yang sama yang disandingkan walau urutannya bergeser."""
-    idx = {}
-    for j, ln in enumerate(lb):
-        if ln in only_b:
-            k = key_of(ln)
-            if k:
-                idx.setdefault(k, []).append(j)
-    pos, used_b, paired_a, paired_b = [], set(), set(), set()
+def mask_key(t):
+    k = re.sub(r'[0-9]', '#', t[:KEYLEN])
+    return k if len(k.replace(' ', '')) >= 12 else None
+
+
+def lcp_len(a, b):
+    n = min(len(a), len(b))
+    i = 0
+    while i < n and a[i] == b[i]:
+        i += 1
+    return i
+
+
+def pair_lines(la, lb, only_a, only_b):
+    """Pasangkan baris beda antara kedua sisi. Tiga tahap, dari yang paling
+    pasti ke yang paling longgar: kunci persis, kunci bertopeng angka (hanya
+    diterima bila tidak ambigu), lalu kemiripan awalan untuk sisa yang sedikit.
+    Sama persis dengan yang dipakai Compare-Report-Tool.html."""
+    seen, idx_a = set(), []
     for i, ln in enumerate(la):
-        if len(pos) >= SAMPLE_POS:
-            break
-        if ln not in only_a or ln in paired_a:
-            continue
-        k = key_of(ln)
-        if not k or k not in idx:
-            continue
-        hit = next((j for j in idx[k] if j not in used_b), None)
-        if hit is None:
-            continue
-        used_b.add(hit)
-        paired_a.add(ln)
-        paired_b.add(lb[hit])
-        pos.append({'no': i + 1, 'noProd': hit + 1,
-                    'ptr': trunc(ln), 'prod': trunc(lb[hit]),
-                    'codeA': sa[i], 'codeB': sb[hit]})
-    r['samplesPos'] = pos
-    r['posDiff'] = len(pos)
-    return paired_a, paired_b
+        if ln in only_a and ln not in seen:
+            seen.add(ln)
+            idx_a.append(i)
+    seen, idx_b = set(), []
+    for j, ln in enumerate(lb):
+        if ln in only_b and ln not in seen:
+            seen.add(ln)
+            idx_b.append(j)
+
+    pairs, taken_a, taken_b = [], set(), set()
+
+    def tahap(keyfn, ketat):
+        peta = {}
+        for j in idx_b:
+            if j in taken_b:
+                continue
+            k = keyfn(lb[j])
+            if k:
+                peta.setdefault(k, []).append(j)
+        cnt_a = {}
+        if ketat:
+            for i in idx_a:
+                if i in taken_a:
+                    continue
+                k = keyfn(la[i])
+                if k:
+                    cnt_a[k] = cnt_a.get(k, 0) + 1
+        for i in idx_a:
+            if i in taken_a:
+                continue
+            k = keyfn(la[i])
+            if not k or k not in peta:
+                continue
+            cand = peta[k]
+            if ketat and (len(cand) != 1 or cnt_a.get(k) != 1):
+                continue
+            hit = next((j for j in cand if j not in taken_b), None)
+            if hit is None:
+                continue
+            taken_a.add(i)
+            taken_b.add(hit)
+            pairs.append((i, hit))
+
+    tahap(key_of, False)
+    tahap(mask_key, True)
+
+    sisa_a = [i for i in idx_a if i not in taken_a]
+    sisa_b = [j for j in idx_b if j not in taken_b]
+    if sisa_a and sisa_b and len(sisa_a) <= 400 and len(sisa_b) <= 400:
+        for i in sisa_a:
+            best, best_len = -1, 7       # minimal 8 karakter awal harus sama
+            for j in sisa_b:
+                if j in taken_b:
+                    continue
+                L = lcp_len(la[i], lb[j])
+                # awalan yang sama harus berisi, bukan sekadar deretan spasi
+                if L > best_len and len(la[i][:L].replace(' ', '')) >= 6:
+                    best, best_len = j, L
+            if best >= 0:
+                taken_a.add(i)
+                taken_b.add(best)
+                pairs.append((i, best))
+
+    pairs.sort()
+    return (pairs,
+            [i for i in idx_a if i not in taken_a],
+            [j for j in idx_b if j not in taken_b])
+
+
+def pair_by_content(r, la, lb, only_a, only_b, sa, sb):
+    """Contoh baris beda yang disandingkan, diambil dari hasil pemasangan."""
+    pairs, _, _ = pair_lines(la, lb, only_a, only_b)
+    r['samplesPos'] = [
+        {'no': i + 1, 'noProd': j + 1, 'ptr': trunc(la[i]), 'prod': trunc(lb[j]),
+         'codeA': sa[i], 'codeB': sb[j]}
+        for i, j in pairs[:SAMPLE_POS]]
+    r['posDiff'] = len(pairs)
+    return {la[i] for i, _ in pairs}, {lb[j] for _, j in pairs}
 
 
 # Tanggal dan jam bertanda baca dibaca sebagai satu token, bukan terpecah.
@@ -240,30 +387,15 @@ def line_time_only(a, b):
 def time_only_diff(la, lb, only_a, only_b, sa, sb):
     """Seluruh beda hanya soal waktu: baris yang berpasangan cuma berselisih
     tanggal/jam, dan baris tanpa pasangan semuanya baris header/trailer."""
-    idx = {}
-    for j, ln in enumerate(lb):
-        if ln in only_b:
-            k = key_of(ln)
-            if k:
-                idx.setdefault(k, []).append(j)
-    used, paired_a = set(), set()
-    for ln in la:
-        if ln not in only_a or ln in paired_a:
-            continue
-        k = key_of(ln)
-        hit = next((j for j in idx.get(k, []) if j not in used), None) if k else None
-        if hit is None:
-            continue
-        if not line_time_only(ln, lb[hit]):
+    pairs, solo_a, solo_b = pair_lines(la, lb, only_a, only_b)
+    for i, j in pairs:
+        if not line_time_only(la[i], lb[j]):
             return False
-        used.add(hit)
-        paired_a.add(ln)
-    for ln in only_a:
-        if ln not in paired_a and not is_meta(ln):
+    for i in solo_a:
+        if not is_meta(la[i]):
             return False
-    sisa_b = {lb[j] for j in range(len(lb)) if lb[j] in only_b and j not in used}
-    for ln in sisa_b:
-        if not is_meta(ln):
+    for j in solo_b:
+        if not is_meta(lb[j]):
             return False
     return True
 
@@ -325,7 +457,7 @@ def blank(rel):
         'onlyPtrRows': 0, 'onlyProdRows': 0, 'posDiff': 0,
         'samplesPos': [], 'samplesPtr': [], 'samplesProd': [],
         'codes': [], 'codesSame': 0, 'codesPages': [], 'codeRows': [],
-        'softReason': None,
+        'softReason': None, 'lembar': False,
         'eolPtr': None, 'eolProd': None,
         'status': '', 'note': '',
     }
@@ -345,8 +477,14 @@ def analyse(rel, a, b):
         r['note'] = 'File terlalu besar untuk dianalisa per baris; MD5 berbeda.'
         return r
 
-    la, r['eolPtr'] = read_lines(a['abs'])
-    lb, r['eolProd'] = read_lines(b['abs'])
+    la, r['eolPtr'], biner_a = read_for_compare(a['abs'])
+    lb, r['eolProd'], biner_b = read_for_compare(b['abs'])
+    if biner_a or biner_b:
+        r['status'] = 'BEDA_DATA'
+        r['note'] = ('Isinya berbeda, tetapi tidak bisa dirinci per baris karena %s.'
+                     % (biner_a or biner_b))
+        return r
+    r['lembar'] = a['abs'].lower().endswith(('.xlsx', '.xlsm'))
     r['linesPtr'], r['linesProd'] = len(la), len(lb)
     A, B = section_scan(la), section_scan(lb)
     code_diff(r, A, B)
@@ -385,7 +523,9 @@ def analyse(rel, a, b):
                      'nomor halaman, atau jumlah record di baris header/trailer.')
     else:
         r['status'] = 'BEDA_DATA'
-        r['note'] = 'Ada baris data yang isinya berbeda antara PTR dan Production.'
+        r['note'] = ('Ada isi sel yang berbeda antara PTR dan Production. Berkas lembar '
+                     'kerja dibandingkan per sel, bukan per baris teks.' if r['lembar']
+                     else 'Ada baris data yang isinya berbeda antara PTR dan Production.')
     return r
 
 
@@ -802,8 +942,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '1.9';
+var APP_VERSION = '2.0';
 var CHANGELOG = [
+  ['2.0', '15 Okt 2026', [
+    'Berkas .xlsx dibandingkan per isi sel, bukan sebagai teks mentah. '
+      + 'Sebelumnya isinya tampil sebagai sampah biner karena .xlsx '
+      + 'sebenarnya arsip ZIP.',
+    'Berkas biner lain - .xls lama, .gz, .zip, gambar - dilaporkan apa adanya '
+      + 'tanpa rincian baris, tidak lagi memunculkan baris sampah.'
+  ]],
   ['1.9', '15 Okt 2026', [
     'Beda jam atau tanggal cetak, beda header, dan beda format baris kini '
       + 'dihitung cocok dan tidak lagi ditampilkan sebagai perbedaan.',

@@ -7,6 +7,18 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 2.0 — 15 Oktober 2026
+
+- Berkas `.xlsx` dibandingkan **per isi sel**, bukan sebagai teks mentah.
+  Sebelumnya isinya tampil sebagai sampah biner (`PK`, `[Content_Types].xml`)
+  karena `.xlsx` sebenarnya arsip ZIP berisi XML. Kini tiap sel dirender jadi
+  baris `Sheet1 baris 28  B28=... | C28=...` sehingga bisa ditelusuri.
+- Berkas biner lain — `.xls` lama, `.gz`, `.zip`, gambar — dilaporkan apa adanya
+  dengan keterangan jelas, tanpa baris sampah.
+- Pemasangan baris tiga tahap disamakan antara `index.html` dan
+  `compare_report.py`; sebelumnya versi baris perintah masih satu tahap,
+  sehingga contoh baris sering kosong dan beda jam cetak tidak terdeteksi.
+
 ## 1.9 — 15 Oktober 2026
 
 - Beda jam atau tanggal cetak, beda header/trailer, dan beda format baris kini

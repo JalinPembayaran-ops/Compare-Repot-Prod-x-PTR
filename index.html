@@ -427,6 +427,135 @@ function lineEnding(buf){
   return (crlf === lf) ? 'CRLF' : 'campuran (CRLF+LF)';
 }
 
+/* ================== pembaca berkas .xlsx ==================
+   Berkas .xlsx adalah arsip ZIP berisi XML, jadi membandingkannya sebagai teks
+   biasa hanya menghasilkan sampah biner. Di sini isinya dibongkar lalu diubah
+   menjadi baris per baris sel, sehingga bisa dibandingkan seperti report teks. */
+
+function unzipPick(buf, mau){
+  var b = new Uint8Array(buf);
+  if(b.length < 22) return Promise.resolve(null);
+  var dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  var i = b.length - 22;
+  while(i >= 0 && dv.getUint32(i, true) !== 0x06054b50) i--;
+  if(i < 0) return Promise.resolve(null);
+
+  var jml = dv.getUint16(i + 10, true), p = dv.getUint32(i + 16, true);
+  var out = {}, jobs = [], td = new TextDecoder(), k;
+  for(k = 0; k < jml; k++){
+    if(p + 46 > b.length || dv.getUint32(p, true) !== 0x02014b50) break;
+    var cara  = dv.getUint16(p + 10, true);
+    var csize = dv.getUint32(p + 20, true);
+    var nlen  = dv.getUint16(p + 28, true);
+    var elen  = dv.getUint16(p + 30, true);
+    var clen  = dv.getUint16(p + 32, true);
+    var lho   = dv.getUint32(p + 42, true);
+    var nama  = td.decode(b.subarray(p + 46, p + 46 + nlen));
+    p += 46 + nlen + elen + clen;
+    if(!mau(nama)) continue;
+    var lnlen = dv.getUint16(lho + 26, true), lelen = dv.getUint16(lho + 28, true);
+    var awal  = lho + 30 + lnlen + lelen;
+    var data  = b.subarray(awal, awal + csize);
+    jobs.push(bukaEntry(nama, data, cara, out));
+  }
+  return Promise.all(jobs).then(function(){ return out; });
+}
+
+function bukaEntry(nama, data, cara, out){
+  if(cara === 0){ out[nama] = data; return Promise.resolve(); }
+  if(cara !== 8 || typeof DecompressionStream === 'undefined') return Promise.resolve();
+  return new Response(new Blob([data]).stream()
+      .pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()
+    .then(function(ab){ out[nama] = new Uint8Array(ab); })
+    .catch(function(){});
+}
+
+var RELS_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+function xlsxToText(buf){
+  return unzipPick(buf, function(n){
+    return n === 'xl/workbook.xml' || n === 'xl/_rels/workbook.xml.rels'
+        || n === 'xl/sharedStrings.xml' || n.indexOf('xl/worksheets/') === 0;
+  }).then(function(files){
+    if(!files || !files['xl/workbook.xml']) return null;
+    var td = new TextDecoder();
+    function doc(n){
+      if(!files[n]) return null;
+      var d = new DOMParser().parseFromString(td.decode(files[n]), 'application/xml');
+      return d.querySelector('parsererror') ? null : d;
+    }
+
+    var wb = doc('xl/workbook.xml');
+    if(!wb) return null;
+
+    var peta = {}, rels = doc('xl/_rels/workbook.xml.rels');
+    if(rels) Array.prototype.forEach.call(rels.getElementsByTagName('Relationship'), function(e){
+      peta[e.getAttribute('Id')] = e.getAttribute('Target');
+    });
+
+    var ss = [], sd = doc('xl/sharedStrings.xml');
+    if(sd) Array.prototype.forEach.call(sd.getElementsByTagName('si'), function(si){
+      var t = '';
+      Array.prototype.forEach.call(si.getElementsByTagName('t'), function(e){ t += e.textContent; });
+      ss.push(t);
+    });
+
+    var baris = [];
+    Array.prototype.forEach.call(wb.getElementsByTagName('sheet'), function(sh){
+      var nm = sh.getAttribute('name') || 'Sheet';
+      var rid = sh.getAttributeNS(RELS_NS, 'id') || sh.getAttribute('r:id');
+      var tgt = peta[rid] || '';
+      if(!tgt) return;
+      tgt = (tgt.charAt(0) === '/') ? tgt.slice(1)
+          : (tgt.indexOf('xl/') === 0 ? tgt : 'xl/' + tgt);
+      var sdoc = doc(tgt);
+      if(!sdoc) return;
+
+      baris.push('=== ' + nm + ' ===');
+      Array.prototype.forEach.call(sdoc.getElementsByTagName('row'), function(row){
+        var sel = [];
+        Array.prototype.forEach.call(row.getElementsByTagName('c'), function(c){
+          var t = c.getAttribute('t'), v = '', e;
+          if(t === 'inlineStr'){
+            e = c.getElementsByTagName('t')[0]; v = e ? e.textContent : '';
+          } else {
+            e = c.getElementsByTagName('v')[0]; v = e ? e.textContent : '';
+            if(t === 's') v = ss[+v] || '';
+          }
+          if(v !== '') sel.push(c.getAttribute('r') + '=' + v);
+        });
+        if(sel.length) baris.push(nm + ' baris ' + row.getAttribute('r') + '  ' + sel.join('  |  '));
+      });
+    });
+    return baris.length ? baris.join('\n') : null;
+  }).catch(function(){ return null; });
+}
+
+/* Berkas biner selain xlsx tidak bisa dirinci per baris. Dikenali dari
+   adanya byte nol pada bagian awalnya. */
+function looksBinary(buf){
+  var b = new Uint8Array(buf, 0, Math.min(buf.byteLength, 8192));
+  for(var i = 0; i < b.length; i++) if(b[i] === 0) return true;
+  return false;
+}
+
+/* Satu pintu baca untuk perbandingan: teks biasa, lembar kerja, atau biner. */
+function readForCompare(file, trim){
+  return file.arrayBuffer().then(function(buf){
+    if(/\.xlsx$|\.xlsm$/i.test(file.name)){
+      return xlsxToText(buf).then(function(t){
+        return t === null
+          ? {text:null, eol:null, jenis:'biner', alasan:'lembar kerja tidak terbaca'}
+          : {text:t, eol:null, jenis:'xlsx'};
+      });
+    }
+    if(/\.xls$|\.gz$|\.zip$|\.png$|\.jpe?g$|\.pdf$/i.test(file.name) || looksBinary(buf))
+      return {text:null, eol:null, jenis:'biner',
+              alasan:'format biner (' + (file.name.split('.').pop() || '-') + ')'};
+    return {text:dec.decode(buf), eol:lineEnding(buf), jenis:'teks'};
+  });
+}
+
 function splitLines(text, trim){
   var arr = text.split('\n');
   if(arr.length && arr[arr.length-1] === '') arr.pop();
@@ -618,8 +747,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '1.9';
+var APP_VERSION = '2.0';
 var CHANGELOG = [
+  ['2.0', '15 Okt 2026', [
+    'Berkas .xlsx dibandingkan per isi sel, bukan sebagai teks mentah. '
+      + 'Sebelumnya isinya tampil sebagai sampah biner karena .xlsx '
+      + 'sebenarnya arsip ZIP.',
+    'Berkas biner lain - .xls lama, .gz, .zip, gambar - dilaporkan apa adanya '
+      + 'tanpa rincian baris, tidak lagi memunculkan baris sampah.'
+  ]],
   ['1.9', '15 Okt 2026', [
     'Beda jam atau tanggal cetak, beda header, dan beda format baris kini '
       + 'dihitung cocok dan tidak lagi ditampilkan sebagai perbedaan.',
@@ -809,7 +945,7 @@ function pairLines(la, lb, uA, uB){
 
 function blankRow(name, folder){
   return { name:name, name2:null, folder:folder, path:folder+'/'+name, codes:[], codesSame:0, codesPages:[], codeRows:[],
-    softReason:null,
+    softReason:null, lembar:false,
     eolPtr:null, eolProd:null,
     sizePtr:null, sizeProd:null, linesPtr:null, linesProd:null,
     onlyPtrRows:0, onlyProdRows:0, posDiff:0,
@@ -1027,13 +1163,21 @@ function compare(){
                + 'Isinya sudah dipastikan berbeda. Naikkan batas untuk melihat detailnya.';
         return;
       }
-      return Promise.all([fa.arrayBuffer(), fb.arrayBuffer()]).then(function(bufs){
-        r.eolPtr  = lineEnding(bufs[0]);
-        r.eolProd = lineEnding(bufs[1]);
-        var ta = dec.decode(bufs[0]), tb = dec.decode(bufs[1]);
-        bufs[0] = bufs[1] = null;
-        analyseText(r, ta, tb, trim);
-      });
+      return Promise.all([readForCompare(fa, trim), readForCompare(fb, trim)])
+        .then(function(res){
+          r.eolPtr = res[0].eol; r.eolProd = res[1].eol;
+          if(res[0].jenis === 'biner' || res[1].jenis === 'biner'){
+            r.status = 'BEDA_DATA';
+            r.note = 'Isinya berbeda, tetapi tidak bisa dirinci per baris karena '
+                   + (res[0].alasan || res[1].alasan) + '.';
+            return;
+          }
+          r.lembar = (res[0].jenis === 'xlsx');
+          analyseText(r, res[0].text, res[1].text, trim);
+          if(r.lembar && r.status === 'BEDA_DATA')
+            r.note = 'Ada isi sel yang berbeda antara PTR dan Production. '
+                   + 'Berkas lembar kerja dibandingkan per sel, bukan per baris teks.';
+        });
     }).then(function(){
       rows.push(r); done++;
       return one(i+1);
@@ -1296,10 +1440,10 @@ function render(){
 /* Bangun seluruh baris berbeda untuk diunduh: yang berpasangan maupun yang
    memang tidak punya pasangan di sisi lain. */
 function buildAllRows(fa, fb, trim){
-  return Promise.all([fa.arrayBuffer(), fb.arrayBuffer()]).then(function(bufs){
-    var la = splitLines(dec.decode(bufs[0]), trim);
-    var lb = splitLines(dec.decode(bufs[1]), trim);
-    bufs[0] = bufs[1] = null;
+  return Promise.all([readForCompare(fa, trim), readForCompare(fb, trim)]).then(function(res){
+    if(res[0].jenis === 'biner' || res[1].jenis === 'biner') return [];
+    var la = splitLines(res[0].text, trim);
+    var lb = splitLines(res[1].text, trim);
     var A = sectionScan(la), B = sectionScan(lb), i;
     var ca = new Map(), cb = new Map();
     for(i=0;i<la.length;i++) ca.set(la[i], (ca.get(la[i])||0)+1);
