@@ -180,6 +180,94 @@ def pair_by_content(r, la, lb, only_a, only_b, sa, sb):
     return paired_a, paired_b
 
 
+# Tanggal dan jam bertanda baca dibaca sebagai satu token, bukan terpecah.
+RE_TOKEN = re.compile(r'\d{2}[:.]\d{2}(?:[:.]\d{2})?|\d{2}[/-]\d{2}[/-]\d{4}'
+                      r'|\d{4}[/-]\d{2}[/-]\d{2}|[0-9A-Za-z]+')
+
+
+def _tgl(y, m, d):
+    return 1 <= m <= 12 and 1 <= d <= 31
+
+
+def _jam(h, mi, s=0):
+    return h < 24 and mi < 60 and s < 60
+
+
+def is_datetime_token(t):
+    """Token berupa tanggal atau jam yang sah."""
+    if re.match(r'^\d{2}[:.]\d{2}([:.]\d{2})?$', t):
+        return True
+    if re.match(r'^\d{2}[/-]\d{2}[/-]\d{4}$', t):
+        return True
+    if not t.isdigit():
+        return False
+    n = len(t)
+    g = lambda a, b: int(t[a:b])
+    if n == 6:
+        return _tgl(g(0, 2), g(2, 4), g(4, 6)) or _jam(g(0, 2), g(2, 4), g(4, 6))
+    if n == 8:
+        return _tgl(g(0, 4), g(4, 6), g(6, 8))
+    if n == 12:
+        return _tgl(g(0, 2), g(2, 4), g(4, 6)) and _jam(g(6, 8), g(8, 10), g(10, 12))
+    if n == 14:
+        return _tgl(g(0, 4), g(4, 6), g(6, 8)) and _jam(g(8, 10), g(10, 12), g(12, 14))
+    return False
+
+
+def line_time_only(a, b):
+    """Dua baris yang hanya berselisih pada token tanggal atau jam.
+
+    Diperiksa per token, bukan per potongan karakter, supaya '...;20260903'
+    lawan '...;20260902' terbaca utuh sebagai tanggal - bukan satu digit."""
+    if a == b:
+        return True
+    # rangka baris - bagian selain token - harus sama persis
+    if RE_TOKEN.sub('\x01', a) != RE_TOKEN.sub('\x01', b):
+        return False
+    ta, tb = RE_TOKEN.findall(a), RE_TOKEN.findall(b)
+    if len(ta) != len(tb):
+        return False
+    beda = 0
+    for x, y in zip(ta, tb):
+        if x == y:
+            continue
+        if not (is_datetime_token(x) and is_datetime_token(y)):
+            return False
+        beda += 1
+    return beda > 0
+
+
+def time_only_diff(la, lb, only_a, only_b, sa, sb):
+    """Seluruh beda hanya soal waktu: baris yang berpasangan cuma berselisih
+    tanggal/jam, dan baris tanpa pasangan semuanya baris header/trailer."""
+    idx = {}
+    for j, ln in enumerate(lb):
+        if ln in only_b:
+            k = key_of(ln)
+            if k:
+                idx.setdefault(k, []).append(j)
+    used, paired_a = set(), set()
+    for ln in la:
+        if ln not in only_a or ln in paired_a:
+            continue
+        k = key_of(ln)
+        hit = next((j for j in idx.get(k, []) if j not in used), None) if k else None
+        if hit is None:
+            continue
+        if not line_time_only(ln, lb[hit]):
+            return False
+        used.add(hit)
+        paired_a.add(ln)
+    for ln in only_a:
+        if ln not in paired_a and not is_meta(ln):
+            return False
+    sisa_b = {lb[j] for j in range(len(lb)) if lb[j] in only_b and j not in used}
+    for ln in sisa_b:
+        if not is_meta(ln):
+            return False
+    return True
+
+
 def pick_unique(lines, uniq, sec, already=frozenset()):
     """Contoh baris yang benar-benar tidak punya pasangan di sisi lain,
     lengkap dengan nomor baris dan kode report tempat baris itu berada."""
@@ -237,7 +325,7 @@ def blank(rel):
         'onlyPtrRows': 0, 'onlyProdRows': 0, 'posDiff': 0,
         'samplesPos': [], 'samplesPtr': [], 'samplesProd': [],
         'codes': [], 'codesSame': 0, 'codesPages': [], 'codeRows': [],
-        'orderOnly': False,
+        'softReason': None,
         'eolPtr': None, 'eolProd': None,
         'status': '', 'note': '',
     }
@@ -265,8 +353,9 @@ def analyse(rel, a, b):
     sa, sb = A[0], B[0]
 
     if la == lb:
-        r['status'] = 'BEDA_FORMAT'
-        r['note'] = ('Isi baris identik. Beda hanya pada spasi di akhir baris '
+        r['status'] = 'IDENTIK'
+        r['softReason'] = 'format'
+        r['note'] = ('Isi report cocok. Beda hanya pada spasi di akhir baris '
                      'atau akhiran baris (CRLF vs LF).')
         return r
 
@@ -279,7 +368,7 @@ def analyse(rel, a, b):
 
     if not only_a and not only_b:
         r['status'] = 'IDENTIK'
-        r['orderOnly'] = True
+        r['softReason'] = 'urutan'
         r['note'] = ('Isi report cocok. Seluruh baris sama persis, hanya urutan '
                      'barisnya yang berbeda (%d posisi bergeser).' % shifted)
         return r
@@ -289,11 +378,11 @@ def analyse(rel, a, b):
     r['samplesPtr'] = pick_unique(la, only_a, sa, paired_a)
     r['samplesProd'] = pick_unique(lb, only_b, sb, paired_b)
 
-    uniq = list(only_a.keys()) + list(only_b.keys())
-    if uniq and len(uniq) <= 2 * SAMPLE_UNIQ and all(is_meta(x) for x in uniq):
-        r['status'] = 'BEDA_HEADER'
-        r['note'] = ('Beda hanya pada baris header/trailer (jam cetak, nomor halaman, '
-                     'atau jumlah record). Baris data tidak berubah.')
+    if time_only_diff(la, lb, only_a, only_b, sa, sb):
+        r['status'] = 'IDENTIK'
+        r['softReason'] = 'jam'
+        r['note'] = ('Isi report cocok. Beda hanya pada jam cetak, tanggal cetak, '
+                     'nomor halaman, atau jumlah record di baris header/trailer.')
     else:
         r['status'] = 'BEDA_DATA'
         r['note'] = 'Ada baris data yang isinya berbeda antara PTR dan Production.'
@@ -490,9 +579,13 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
 (function(){
 var D = window.__DATA__, rows = D.rows, meta = D.meta;
 var lastFiles = {ptr: meta.filesPtr || [], prod: meta.filesProd || []};
+/* Beda urutan baris, beda jam cetak dan beda format baris dihitung cocok;
+   label ini dipakai banner ringkasan maupun tabel rincian. */
+var SOFT_LABEL = {urutan:'beda urutan baris', jam:'beda jam cetak',
+                  format:'beda format baris'};
 var SM = {
-  IDENTIK:['Identik','ok'], BEDA_FORMAT:['Beda format baris','warn'],
-  BEDA_HEADER:['Beda header/jam','warn'],
+  IDENTIK:['Cocok','ok'],
+
   BEDA_DATA:['BEDA DATA','bad'], HANYA_PTR:['Hanya di PTR','ptr'],
   HANYA_PROD:['Hanya di Prod','prod']
 };
@@ -508,26 +601,27 @@ document.getElementById('rootPtr').textContent  = meta.rootPtr;
 document.getElementById('rootProd').textContent = meta.rootProd;
 
 var nBad=cnt('BEDA_DATA'), nOnlyP=cnt('HANYA_PTR'), nOnlyD=cnt('HANYA_PROD');
-var nSoft=cnt('BEDA_HEADER')+cnt('BEDA_FORMAT');
-var nOrder=rows.filter(function(r){ return r.orderOnly; }).length;
-var orderTxt = nOrder ? ' Termasuk <b>'+nOrder+'</b> file yang isinya sudah cocok dan '
-  + 'hanya berbeda urutan barisnya.' : '';
+
+var softCount = {};
+rows.forEach(function(r){
+  if(r.softReason) softCount[r.softReason] = (softCount[r.softReason]||0)+1; });
+var softBits = Object.keys(softCount).map(function(k){
+  return '<b>'+softCount[k]+'</b> '+SOFT_LABEL[k]; });
+var orderTxt = softBits.length
+  ? ' Termasuk file yang isinya sudah cocok dan hanya ' + softBits.join(', ') + '.' : '';
+
 var blocking=nBad+nOnlyP+nOnlyD;
 document.getElementById('verdict').innerHTML =
-  (blocking===0 && nSoft===0)
+  (blocking===0)
   ? '<div class="verdict ok"><div class="ic">✓</div><div><h2>COCOK — Report PTR sama dengan Production</h2>'
     + '<p>Seluruh ' + rows.length + ' file cocok.' + orderTxt + '</p></div></div>'
-  : '<div class="verdict ' + (blocking?'bad':'warn') + '"><div class="ic">' + (blocking?'✕':'!') + '</div><div>'
-    + '<h2>' + (blocking ? 'TIDAK COCOK — ' + blocking + ' file wajib ditindaklanjuti'
-                         : 'PERLU DICEK — ' + nSoft + ' file beda non-data') + '</h2>'
+  : '<div class="verdict bad"><div class="ic">✕</div><div>'
+    + '<h2>TIDAK COCOK — ' + blocking + ' file wajib ditindaklanjuti</h2>'
     + '<p>' + nBad + ' file beda isi data · ' + nOnlyP + ' file hanya ada di PTR · '
-    + nOnlyD + ' file hanya ada di Production · ' + nSoft
-    + ' file beda header/format saja · ' + cnt('IDENTIK') + ' file sudah cocok.'
+    + nOnlyD + ' file hanya ada di Production · ' + cnt('IDENTIK') + ' file sudah cocok.'
     + orderTxt + '</p></div></div>';
 
-var kpis=[['IDENTIK','Identik','ok'],['BEDA_DATA','Beda data','bad'],
-  ['BEDA_HEADER','Beda header/jam','warn'],
-  ['BEDA_FORMAT','Beda format baris','warn'],
+var kpis=[['IDENTIK','Cocok','ok'],['BEDA_DATA','Beda data','bad'],
   ['HANYA_PTR','Hanya di PTR','ptr'],['HANYA_PROD','Hanya di Prod','prod']];
 document.getElementById('kpis').innerHTML = kpis.map(function(k){
   return '<div class="kpi '+k[2]+'"><div class="n">'+cnt(k[0])+'</div><div class="l">'+k[1]+'</div></div>';
@@ -564,12 +658,12 @@ var folders=[]; rows.forEach(function(r){if(folders.indexOf(r.folder)<0)folders.
 folders.sort();
 document.getElementById('byFolder').innerHTML =
  '<thead><tr><th>Folder</th><th class="num">Total</th><th class="num">Identik</th>'
- +'<th class="num">Beda data</th><th class="num">Beda header/format</th>'
+ +'<th class="num">Beda data</th><th class="num">Cocok, beda non-data</th>'
  +'<th class="num">Hanya PTR</th><th class="num">Hanya Prod</th></tr></thead><tbody>'
  + folders.map(function(f){
    var g=rows.filter(function(r){return r.folder===f;});
    var c=function(s){return g.filter(function(r){return r.status===s;}).length;};
-   var soft=c('BEDA_HEADER')+c('BEDA_FORMAT');
+   var soft=g.filter(function(r){ return r.softReason; }).length;
    return '<tr><td class="fname">'+esc(f)+'</td><td class="num">'+g.length+'</td>'
    +'<td class="num">'+c('IDENTIK')+'</td><td class="num">'+(c('BEDA_DATA')||'–')+'</td>'
    +'<td class="num">'+(soft||'–')+'</td><td class="num">'+(c('HANYA_PTR')||'–')+'</td>'
@@ -578,8 +672,7 @@ document.getElementById('byFolder').innerHTML =
 
 var fStatus='ALL', fQ='', fFolder='ALL';
 var fdefs=[['ALL','Semua'],['BEDA_DATA','Beda data'],['HANYA_PTR','Hanya di PTR'],
-  ['HANYA_PROD','Hanya di Prod'],['BEDA_HEADER','Beda header'],
-  ['BEDA_FORMAT','Beda format'],['IDENTIK','Identik']];
+  ['HANYA_PROD','Hanya di Prod'],['IDENTIK','Cocok']];
 document.getElementById('filters').innerHTML = fdefs.map(function(d){
   var n = d[0]==='ALL'?rows.length:cnt(d[0]);
   return '<button class="chip" data-v="'+d[0]+'" aria-pressed="'+(d[0]==='ALL')+'">'+d[1]+' ('+n+')</button>';
@@ -709,8 +802,14 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '1.8';
+var APP_VERSION = '1.9';
 var CHANGELOG = [
+  ['1.9', '15 Okt 2026', [
+    'Beda jam atau tanggal cetak, beda header, dan beda format baris kini '
+      + 'dihitung cocok dan tidak lagi ditampilkan sebagai perbedaan.',
+    'Selisih waktu dikenali per token, sehingga tanggal yang berubah di tengah '
+      + 'baris terbaca utuh dan nominal tidak ikut dianggap waktu.'
+  ]],
   ['1.8', '07 Okt 2026', [
     'Jenis report NET_SETTLE_RNTS_YYMMDD ditambahkan.',
     'Kode di depan pola boleh 3 atau 4 huruf, sehingga '
@@ -760,6 +859,48 @@ function changelogHTML(){
              + '</ul>';
       }).join('')
     + '</div>';
+}
+
+/* ===================== pengenal selisih waktu =====================
+   Dua baris dianggap hanya berselisih waktu bila seluruh token yang berbeda
+   di antaranya berupa tanggal atau jam yang sah di KEDUA sisi. Pemeriksaan
+   per token, bukan per potongan karakter, supaya '...;20260903' lawan
+   '...;20260902' terbaca utuh sebagai tanggal - bukan sekadar satu digit. */
+function isDateTimeToken(t){
+  if(/^\d{2}[:.]\d{2}([:.]\d{2})?$/.test(t)) return true;          /* 10:25 / 10:25:47 */
+  if(/^\d{2}[/-]\d{2}[/-]\d{4}$/.test(t)) return true;            /* 01/09/2026       */
+  if(!/^\d+$/.test(t)) return false;
+  function tgl(y, m, d){ return m >= 1 && m <= 12 && d >= 1 && d <= 31; }
+  function jam(h, mi, s){ return h < 24 && mi < 60 && (s === undefined || s < 60); }
+  var n = t.length;
+  if(n === 6){                                                      /* YYMM\ / HHMMSS */
+    return tgl(+t.slice(0,2), +t.slice(2,4), +t.slice(4,6))
+        || jam(+t.slice(0,2), +t.slice(2,4), +t.slice(4,6));
+  }
+  if(n === 8) return tgl(+t.slice(0,4), +t.slice(4,6), +t.slice(6,8));
+  if(n === 12) return tgl(+t.slice(0,2), +t.slice(2,4), +t.slice(4,6))
+                   && jam(+t.slice(6,8), +t.slice(8,10), +t.slice(10,12));
+  if(n === 14) return tgl(+t.slice(0,4), +t.slice(4,6), +t.slice(6,8))
+                   && jam(+t.slice(8,10), +t.slice(10,12), +t.slice(12,14));
+  return false;
+}
+
+/* Tanggal dan jam bertanda baca dibaca sebagai satu token, bukan terpecah. */
+var RE_TOKEN = /\d{2}[:.]\d{2}(?:[:.]\d{2})?|\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2}|[0-9A-Za-z]+/g;
+
+function lineTimeOnly(a, b){
+  if(a === b) return true;
+  /* rangka baris - bagian selain token - harus sama persis */
+  if(a.replace(RE_TOKEN, '\u0001') !== b.replace(RE_TOKEN, '\u0001')) return false;
+  var ta = a.match(RE_TOKEN) || [], tb = b.match(RE_TOKEN) || [];
+  if(ta.length !== tb.length) return false;
+  var beda = 0, i;
+  for(i = 0; i < ta.length; i++){
+    if(ta[i] === tb[i]) continue;
+    if(!isDateTimeToken(ta[i]) || !isDateTimeToken(tb[i])) return false;
+    beda++;
+  }
+  return beda > 0;
 }
 
 function kodeTag(a,b){
@@ -860,7 +1001,7 @@ function render(){
       var sm=SM[r.status];
       var dif = (r.onlyPtrRows || r.onlyProdRows)
         ? nf(r.onlyPtrRows + r.onlyProdRows) : '–';
-      var sub = esc(r.folder) + (r.orderOnly ? ' &middot; beda urutan baris' : '');
+      var sub = esc(r.folder) + (r.softReason ? ' &middot; ' + SOFT_LABEL[r.softReason] : '');
       return '<tr><td><div class="fname">'+esc(r.name)+'</div><div class="fdir">'+sub+'</div></td>'
        +'<td><span class="badge '+sm[1]+'">'+sm[0]+'</span></td>'
        +'<td class="num">'+(r.sizePtr!=null?kb(r.sizePtr):'–')+'</td>'

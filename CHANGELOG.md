@@ -7,6 +7,18 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 1.9 — 15 Oktober 2026
+
+- Beda jam atau tanggal cetak, beda header/trailer, dan beda format baris kini
+  dihitung **cocok** dan tidak lagi ditampilkan sebagai perbedaan. Kartu dan
+  filter untuk status tersebut dihapus; jumlahnya tetap disebut sekali di
+  banner ringkasan dan ditandai halus di kolom File.
+- Selisih waktu dikenali **per token**, bukan per potongan karakter, sehingga
+  `...;20260903` lawan `...;20260902` terbaca utuh sebagai tanggal. Tanggal dan
+  jam bertanda baca (`01/09/2026`, `10:25:47`) dibaca sebagai satu token, dan
+  rangka baris di luar token harus sama persis supaya nominal tidak pernah
+  disalahartikan sebagai waktu.
+
 ## 1.8 — 07 Oktober 2026
 
 - Jenis report `NET_SETTLE_RNTS_YYMMDD` ditambahkan, melengkapi varian ALTO

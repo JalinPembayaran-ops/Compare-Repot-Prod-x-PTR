@@ -274,9 +274,13 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
 'use strict';
 
 var SAMPLE_POS = 25, SAMPLE_UNIQ = 15, LINE_TRUNC = 400;
+/* Beda urutan baris, beda jam cetak dan beda format baris dihitung cocok;
+   label ini dipakai banner ringkasan maupun tabel rincian. */
+var SOFT_LABEL = {urutan:'beda urutan baris', jam:'beda jam cetak',
+                  format:'beda format baris'};
 var SM = {
-  IDENTIK:['Identik','ok'], BEDA_FORMAT:['Beda format baris','warn'],
-  BEDA_HEADER:['Beda header/jam','warn'],
+  IDENTIK:['Cocok','ok'],
+
   BEDA_DATA:['BEDA DATA','bad'], HANYA_PTR:['Hanya di PTR','ptr'],
   HANYA_PROD:['Hanya di Prod','prod']
 };
@@ -614,8 +618,14 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '1.8';
+var APP_VERSION = '1.9';
 var CHANGELOG = [
+  ['1.9', '15 Okt 2026', [
+    'Beda jam atau tanggal cetak, beda header, dan beda format baris kini '
+      + 'dihitung cocok dan tidak lagi ditampilkan sebagai perbedaan.',
+    'Selisih waktu dikenali per token, sehingga tanggal yang berubah di tengah '
+      + 'baris terbaca utuh dan nominal tidak ikut dianggap waktu.'
+  ]],
   ['1.8', '07 Okt 2026', [
     'Jenis report NET_SETTLE_RNTS_YYMMDD ditambahkan.',
     'Kode di depan pola boleh 3 atau 4 huruf, sehingga '
@@ -665,6 +675,48 @@ function changelogHTML(){
              + '</ul>';
       }).join('')
     + '</div>';
+}
+
+/* ===================== pengenal selisih waktu =====================
+   Dua baris dianggap hanya berselisih waktu bila seluruh token yang berbeda
+   di antaranya berupa tanggal atau jam yang sah di KEDUA sisi. Pemeriksaan
+   per token, bukan per potongan karakter, supaya '...;20260903' lawan
+   '...;20260902' terbaca utuh sebagai tanggal - bukan sekadar satu digit. */
+function isDateTimeToken(t){
+  if(/^\d{2}[:.]\d{2}([:.]\d{2})?$/.test(t)) return true;          /* 10:25 / 10:25:47 */
+  if(/^\d{2}[/-]\d{2}[/-]\d{4}$/.test(t)) return true;            /* 01/09/2026       */
+  if(!/^\d+$/.test(t)) return false;
+  function tgl(y, m, d){ return m >= 1 && m <= 12 && d >= 1 && d <= 31; }
+  function jam(h, mi, s){ return h < 24 && mi < 60 && (s === undefined || s < 60); }
+  var n = t.length;
+  if(n === 6){                                                      /* YYMM\ / HHMMSS */
+    return tgl(+t.slice(0,2), +t.slice(2,4), +t.slice(4,6))
+        || jam(+t.slice(0,2), +t.slice(2,4), +t.slice(4,6));
+  }
+  if(n === 8) return tgl(+t.slice(0,4), +t.slice(4,6), +t.slice(6,8));
+  if(n === 12) return tgl(+t.slice(0,2), +t.slice(2,4), +t.slice(4,6))
+                   && jam(+t.slice(6,8), +t.slice(8,10), +t.slice(10,12));
+  if(n === 14) return tgl(+t.slice(0,4), +t.slice(4,6), +t.slice(6,8))
+                   && jam(+t.slice(8,10), +t.slice(10,12), +t.slice(12,14));
+  return false;
+}
+
+/* Tanggal dan jam bertanda baca dibaca sebagai satu token, bukan terpecah. */
+var RE_TOKEN = /\d{2}[:.]\d{2}(?:[:.]\d{2})?|\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2}|[0-9A-Za-z]+/g;
+
+function lineTimeOnly(a, b){
+  if(a === b) return true;
+  /* rangka baris - bagian selain token - harus sama persis */
+  if(a.replace(RE_TOKEN, '\u0001') !== b.replace(RE_TOKEN, '\u0001')) return false;
+  var ta = a.match(RE_TOKEN) || [], tb = b.match(RE_TOKEN) || [];
+  if(ta.length !== tb.length) return false;
+  var beda = 0, i;
+  for(i = 0; i < ta.length; i++){
+    if(ta[i] === tb[i]) continue;
+    if(!isDateTimeToken(ta[i]) || !isDateTimeToken(tb[i])) return false;
+    beda++;
+  }
+  return beda > 0;
 }
 
 function maskKey(t){
@@ -757,7 +809,7 @@ function pairLines(la, lb, uA, uB){
 
 function blankRow(name, folder){
   return { name:name, name2:null, folder:folder, path:folder+'/'+name, codes:[], codesSame:0, codesPages:[], codeRows:[],
-    orderOnly:false,
+    softReason:null,
     eolPtr:null, eolProd:null,
     sizePtr:null, sizeProd:null, linesPtr:null, linesProd:null,
     onlyPtrRows:0, onlyProdRows:0, posDiff:0,
@@ -774,8 +826,9 @@ function analyseText(row, ta, tb, trim){
   var i, same = la.length === lb.length;
   if(same){ for(i=0;i<la.length;i++){ if(la[i]!==lb[i]){ same=false; break; } } }
   if(same){
-    row.status = 'BEDA_FORMAT';
-    row.note = 'Isi baris identik. Beda hanya pada spasi di akhir baris atau akhiran baris (CRLF vs LF).';
+    row.status = 'IDENTIK';
+    row.softReason = 'format';
+    row.note = 'Isi report cocok. Beda hanya pada spasi di akhir baris atau akhiran baris (CRLF vs LF).';
     return;
   }
 
@@ -792,7 +845,7 @@ function analyseText(row, ta, tb, trim){
 
   if(nA === 0 && nB === 0){
     row.status = 'IDENTIK';
-    row.orderOnly = true;
+    row.softReason = 'urutan';
     row.note = 'Isi report cocok. Seluruh baris sama persis, hanya urutan barisnya '
       + 'yang berbeda (' + nf(shifted) + ' posisi bergeser).';
     return;
@@ -855,19 +908,31 @@ function analyseText(row, ta, tb, trim){
   row.samplesPtr  = pick(la, uA, A.sec, pairedA);
   row.samplesProd = pick(lb, uB, B.sec, pairedB);
 
-  var allMeta = true;
-  row.samplesPos.forEach(function(s){ if(!isMeta(s.ptr) || !isMeta(s.prod)) allMeta = false; });
-  row.samplesPtr.concat(row.samplesProd).forEach(function(s){
-    if(!isMeta(s.text)) allMeta = false;
-  });
-  if(allMeta && nA <= SAMPLE_UNIQ && nB <= SAMPLE_UNIQ){
-    row.status = 'BEDA_HEADER';
-    row.note = 'Beda hanya pada baris header/trailer (jam cetak, nomor halaman, atau jumlah record). '
-             + 'Baris data tidak berubah.';
-  } else {
-    row.status = 'BEDA_DATA';
-    row.note = 'Ada baris data yang isinya berbeda antara PTR dan Production.';
+  /* Kalau seluruh baris yang berpasangan cuma berselisih jam atau tanggal, dan
+     baris yang tak berpasangan semuanya baris header/trailer, berarti isinya
+     cocok - yang berbeda hanya keterangan pencetakan. Pemeriksaan berhenti
+     pada ketidakcocokan pertama, jadi berkas yang memang beda data tidak
+     terkena biaya tambahan. */
+  var hanyaWaktu = true, z;
+  for(z = 0; z < M.pairs.length; z++){
+    if(!lineTimeOnly(la[M.pairs[z].ia], lb[M.pairs[z].ib])){ hanyaWaktu = false; break; }
   }
+  if(hanyaWaktu)
+    for(z = 0; z < M.soloA.length; z++)
+      if(!isMeta(la[M.soloA[z]])){ hanyaWaktu = false; break; }
+  if(hanyaWaktu)
+    for(z = 0; z < M.soloB.length; z++)
+      if(!isMeta(lb[M.soloB[z]])){ hanyaWaktu = false; break; }
+
+  if(hanyaWaktu){
+    row.status = 'IDENTIK';
+    row.softReason = 'jam';
+    row.note = 'Isi report cocok. Beda hanya pada jam cetak, tanggal cetak, nomor halaman, '
+             + 'atau jumlah record di baris header/trailer.';
+    return;
+  }
+  row.status = 'BEDA_DATA';
+  row.note = 'Ada baris data yang isinya berbeda antara PTR dan Production.';
 }
 
 /* pasangkan file kedua sisi */
@@ -1007,26 +1072,27 @@ function showResults(){
   document.getElementById('results').classList.add('on');
 
   var nBad=cnt('BEDA_DATA'), nOnlyP=cnt('HANYA_PTR'), nOnlyD=cnt('HANYA_PROD');
-  var nSoft=cnt('BEDA_HEADER')+cnt('BEDA_FORMAT');
-var nOrder=rows.filter(function(r){ return r.orderOnly; }).length;
-var orderTxt = nOrder ? ' Termasuk <b>'+nOrder+'</b> file yang isinya sudah cocok dan '
-  + 'hanya berbeda urutan barisnya.' : '';
+
+  var softCount = {};
+  rows.forEach(function(r){
+    if(r.softReason) softCount[r.softReason] = (softCount[r.softReason]||0)+1; });
+  var softBits = Object.keys(softCount).map(function(k){
+    return '<b>'+softCount[k]+'</b> '+SOFT_LABEL[k]; });
+  var orderTxt = softBits.length
+    ? ' Termasuk file yang isinya sudah cocok dan hanya ' + softBits.join(', ') + '.' : '';
+
   var blocking=nBad+nOnlyP+nOnlyD;
   document.getElementById('verdict').innerHTML =
-    (blocking===0 && nSoft===0)
+    (blocking===0)
     ? '<div class="verdict ok"><div class="ic">✓</div><div><h2>COCOK — Report PTR sama dengan Production</h2>'
       + '<p>Seluruh ' + rows.length + ' file cocok.' + orderTxt + '</p></div></div>'
-    : '<div class="verdict ' + (blocking?'bad':'warn') + '"><div class="ic">' + (blocking?'✕':'!') + '</div><div>'
-      + '<h2>' + (blocking ? 'TIDAK COCOK — ' + blocking + ' file wajib ditindaklanjuti'
-                           : 'PERLU DICEK — ' + nSoft + ' file beda non-data') + '</h2>'
+    : '<div class="verdict bad"><div class="ic">✕</div><div>'
+      + '<h2>TIDAK COCOK — ' + blocking + ' file wajib ditindaklanjuti</h2>'
       + '<p>' + nBad + ' file beda isi data &middot; ' + nOnlyP + ' file hanya ada di PTR &middot; '
-      + nOnlyD + ' file hanya ada di Production &middot; ' + nSoft
-      + ' file beda header/format saja &middot; ' + cnt('IDENTIK') + ' file sudah cocok.'
+      + nOnlyD + ' file hanya ada di Production &middot; ' + cnt('IDENTIK') + ' file sudah cocok.'
       + orderTxt + '</p></div></div>';
 
-  var kpis=[['IDENTIK','Identik','ok'],['BEDA_DATA','Beda data','bad'],
-    ['BEDA_HEADER','Beda header/jam','warn'],
-    ['BEDA_FORMAT','Beda format baris','warn'],
+  var kpis=[['IDENTIK','Cocok','ok'],['BEDA_DATA','Beda data','bad'],
     ['HANYA_PTR','Hanya di PTR','ptr'],['HANYA_PROD','Hanya di Prod','prod']];
   document.getElementById('kpis').innerHTML = kpis.map(function(k){
     return '<div class="kpi '+k[2]+'"><div class="n">'+cnt(k[0])+'</div><div class="l">'+k[1]+'</div></div>';
@@ -1064,12 +1130,12 @@ var orderTxt = nOrder ? ' Termasuk <b>'+nOrder+'</b> file yang isinya sudah coco
   folders.sort();
   document.getElementById('byFolder').innerHTML =
    '<thead><tr><th>Folder</th><th class="num">Total</th><th class="num">Identik</th>'
-   +'<th class="num">Beda data</th><th class="num">Beda header/format</th>'
+   +'<th class="num">Beda data</th><th class="num">Cocok, beda non-data</th>'
    +'<th class="num">Hanya PTR</th><th class="num">Hanya Prod</th></tr></thead><tbody>'
    + folders.map(function(f){
      var g=rows.filter(function(r){ return r.folder===f; });
      var c=function(s){ return g.filter(function(r){ return r.status===s; }).length; };
-     var soft=c('BEDA_HEADER')+c('BEDA_FORMAT');
+     var soft=g.filter(function(r){ return r.softReason; }).length;
      return '<tr><td class="fname">'+esc(f)+'</td><td class="num">'+g.length+'</td>'
      +'<td class="num">'+c('IDENTIK')+'</td><td class="num">'+(c('BEDA_DATA')||'–')+'</td>'
      +'<td class="num">'+(soft||'–')+'</td><td class="num">'+(c('HANYA_PTR')||'–')+'</td>'
@@ -1077,8 +1143,7 @@ var orderTxt = nOrder ? ' Termasuk <b>'+nOrder+'</b> file yang isinya sudah coco
    }).join('')+'</tbody>';
 
   var fdefs=[['ALL','Semua'],['BEDA_DATA','Beda data'],['HANYA_PTR','Hanya di PTR'],
-    ['HANYA_PROD','Hanya di Prod'],['BEDA_HEADER','Beda header'],
-    ['BEDA_FORMAT','Beda format'],['IDENTIK','Identik']];
+    ['HANYA_PROD','Hanya di Prod'],['IDENTIK','Cocok']];
   fStatus='ALL'; fFolder='ALL';
   document.getElementById('filters').innerHTML = fdefs.map(function(d){
     var n = d[0]==='ALL'?rows.length:cnt(d[0]);
@@ -1214,7 +1279,7 @@ function render(){
       var dif = (r.onlyPtrRows || r.onlyProdRows)
         ? nf(r.onlyPtrRows + r.onlyProdRows) : '–';
       var sub = r.name2 ? esc(r.folder)+' &middot; Prod: '+esc(r.name2) : esc(r.folder);
-      if(r.orderOnly) sub += ' &middot; beda urutan baris';
+      if(r.softReason) sub += ' &middot; ' + SOFT_LABEL[r.softReason];
       return '<tr><td><div class="fname">'+esc(r.name)+'</div><div class="fdir">'+sub+'</div></td>'
        +'<td><span class="badge '+sm[1]+'">'+sm[0]+'</span></td>'
        +'<td class="num">'+(r.sizePtr!=null?kb(r.sizePtr):'–')+'</td>'
