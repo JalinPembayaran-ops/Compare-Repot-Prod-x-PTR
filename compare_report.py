@@ -19,6 +19,7 @@ LINE_TRUNC    = 400
 
 META_PAT = [
     re.compile(r'^\s*F[HT]\s*\d+'),
+    re.compile(r'^\s*R[HT]\s*[;|]', re.IGNORECASE),
     re.compile(r'\bHAL\s*:'),
     re.compile(r'\bTANGGAL\s*:'),
     re.compile(r'\bKODE\s+(BANK|REPORT)\s*:'),
@@ -384,6 +385,60 @@ def line_time_only(a, b):
     return beda > 0
 
 
+def norm_date(t):
+    if not t.isdigit():
+        return None
+    if len(t) == 8:
+        return t if is_datetime_token(t) else None
+    if len(t) == 6:
+        m, d = int(t[2:4]), int(t[4:6])
+        return '20' + t if 1 <= m <= 12 and 1 <= d <= 31 else None
+    return None
+
+
+def dates_of(line):
+    return [d for d in (norm_date(t) for t in RE_TOKEN.findall(line)) if d]
+
+
+def latest_date_only(la, lb, only_a, only_b):
+    """Beda yang hanya ada pada tanggal data terakhir.
+
+    Report yang dibuat pada jam berbeda hanya berselisih pada hari yang masih
+    berjalan; hari yang sudah selesai isinya sama persis. Kalau ada hari lain
+    ikut berbeda, aturan ini gugur dan berkasnya tetap dihitung beda data."""
+    if len(la) + len(lb) > 1000000:
+        return False
+    maks = ''
+    for arr in (la, lb):
+        for ln in arr:
+            if is_meta(ln):
+                continue
+            for d in dates_of(ln):
+                if d > maks:
+                    maks = d
+    if not maks:
+        return False
+
+    # Harus ada tanggal yang lebih lampau dan isinya memang sudah cocok. Kalau
+    # seluruh berkas hanya memuat tanggal terakhir, tidak ada bukti apa pun
+    # bahwa keduanya sejalan - misalnya PTR kosong sementara Prod berisi.
+    if not any(d < maks
+               for arr in (la, lb) for ln in arr if not is_meta(ln)
+               for d in dates_of(ln)):
+        return False
+
+    ada = False
+    for uniq in (only_a, only_b):
+        for ln in uniq:
+            if is_meta(ln):
+                continue
+            ds = dates_of(ln)
+            if not ds or any(d != maks for d in ds):
+                return False
+            ada = True
+    return ada
+
+
 def time_only_diff(la, lb, only_a, only_b, sa, sb):
     """Seluruh beda hanya soal waktu: baris yang berpasangan cuma berselisih
     tanggal/jam, dan baris tanpa pasangan semuanya baris header/trailer."""
@@ -521,6 +576,12 @@ def analyse(rel, a, b):
         r['softReason'] = 'jam'
         r['note'] = ('Isi report cocok. Beda hanya pada jam cetak, tanggal cetak, '
                      'nomor halaman, atau jumlah record di baris header/trailer.')
+    elif latest_date_only(la, lb, only_a, only_b):
+        r['status'] = 'IDENTIK'
+        r['softReason'] = 'generate'
+        r['note'] = ('Isi report cocok. Seluruh tanggal yang sudah selesai sama persis; '
+                     'yang berbeda hanya tanggal terakhir yang masih berjalan, karena '
+                     'kedua report dibuat pada jam yang berbeda.')
     else:
         r['status'] = 'BEDA_DATA'
         r['note'] = ('Ada isi sel yang berbeda antara PTR dan Production. Berkas lembar '
@@ -722,7 +783,8 @@ var lastFiles = {ptr: meta.filesPtr || [], prod: meta.filesProd || []};
 /* Beda urutan baris, beda jam cetak dan beda format baris dihitung cocok;
    label ini dipakai banner ringkasan maupun tabel rincian. */
 var SOFT_LABEL = {urutan:'beda urutan baris', jam:'beda jam cetak',
-                  format:'beda format baris'};
+                  format:'beda format baris',
+                  generate:'beda jam generate report'};
 var SM = {
   IDENTIK:['Cocok','ok'],
 
@@ -942,8 +1004,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.0';
+var APP_VERSION = '2.1';
 var CHANGELOG = [
+  ['2.1', '26 Okt 2026', [
+    'Beda yang hanya terjadi pada tanggal data terakhir dihitung cocok: itu '
+      + 'sidik jari report yang dibuat pada jam berbeda. Kalau ada tanggal lain '
+      + 'ikut berbeda, berkasnya tetap dilaporkan sebagai beda data.',
+    'Baris header dan trailer bergaya RH; dan RT; dikenali sebagai baris '
+      + 'keterangan, bukan baris data.'
+  ]],
   ['2.0', '15 Okt 2026', [
     'Berkas .xlsx dibandingkan per isi sel, bukan sebagai teks mentah. '
       + 'Sebelumnya isinya tampil sebagai sampah biner karena .xlsx '

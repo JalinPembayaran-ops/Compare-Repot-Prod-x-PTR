@@ -277,7 +277,8 @@ var SAMPLE_POS = 25, SAMPLE_UNIQ = 15, LINE_TRUNC = 400;
 /* Beda urutan baris, beda jam cetak dan beda format baris dihitung cocok;
    label ini dipakai banner ringkasan maupun tabel rincian. */
 var SOFT_LABEL = {urutan:'beda urutan baris', jam:'beda jam cetak',
-                  format:'beda format baris'};
+                  format:'beda format baris',
+                  generate:'beda jam generate report'};
 var SM = {
   IDENTIK:['Cocok','ok'],
 
@@ -285,7 +286,8 @@ var SM = {
   HANYA_PROD:['Hanya di Prod','prod']
 };
 var META_PAT = [
-  /^\s*F[HT]\s*\d+/, /\bHAL\s*:/, /\bTANGGAL\s*:/,
+  /^\s*F[HT]\s*\d+/, /^\s*R[HT]\s*[;|]/i,
+  /\bHAL\s*:/, /\bTANGGAL\s*:/,
   /\bKODE\s+(BANK|REPORT)\s*:/, /\bJAM\s*:/, /\bWAKTU\s+CETAK\b/
 ];
 function isMeta(s){ for(var i=0;i<META_PAT.length;i++) if(META_PAT[i].test(s)) return true; return false; }
@@ -747,8 +749,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.0';
+var APP_VERSION = '2.1';
 var CHANGELOG = [
+  ['2.1', '26 Okt 2026', [
+    'Beda yang hanya terjadi pada tanggal data terakhir dihitung cocok: itu '
+      + 'sidik jari report yang dibuat pada jam berbeda. Kalau ada tanggal lain '
+      + 'ikut berbeda, berkasnya tetap dilaporkan sebagai beda data.',
+    'Baris header dan trailer bergaya RH; dan RT; dikenali sebagai baris '
+      + 'keterangan, bukan baris data.'
+  ]],
   ['2.0', '15 Okt 2026', [
     'Berkas .xlsx dibandingkan per isi sel, bukan sebagai teks mentah. '
       + 'Sebelumnya isinya tampil sebagai sampah biner karena .xlsx '
@@ -839,6 +848,71 @@ function isDateTimeToken(t){
 
 /* Tanggal dan jam bertanda baca dibaca sebagai satu token, bukan terpecah. */
 var RE_TOKEN = /\d{2}[:.]\d{2}(?:[:.]\d{2})?|\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2}|[0-9A-Za-z]+/g;
+
+/* ============ beda yang hanya ada di tanggal data terakhir ============
+   Report yang dibuat pada jam berbeda hanya berselisih pada hari yang masih
+   berjalan; hari-hari yang sudah selesai isinya sama persis. Kalau ada hari
+   lain ikut berbeda, aturan ini gugur dan berkasnya tetap dihitung beda data. */
+function normDate(t){
+  if(!/^\d+$/.test(t)) return null;
+  if(t.length === 8) return isDateTimeToken(t) ? t : null;
+  if(t.length === 6){
+    var m = +t.slice(2,4), d = +t.slice(4,6);
+    return (m >= 1 && m <= 12 && d >= 1 && d <= 31) ? '20' + t : null;
+  }
+  return null;
+}
+
+function datesOf(line){
+  var tok = line.match(RE_TOKEN) || [], out = [], i, d;
+  for(i = 0; i < tok.length; i++){ d = normDate(tok[i]); if(d) out.push(d); }
+  return out;
+}
+
+function latestDateOnly(la, lb, uA, uB){
+  if(la.length + lb.length > 1000000) return false;
+
+  /* tanggal terbesar pada baris data, header dan trailer tidak dihitung */
+  var maks = '', i, j, d;
+  function pindai(arr){
+    for(i = 0; i < arr.length; i++){
+      if(isMeta(arr[i])) continue;
+      d = datesOf(arr[i]);
+      for(j = 0; j < d.length; j++) if(d[j] > maks) maks = d[j];
+    }
+  }
+  pindai(la); pindai(lb);
+  if(!maks) return false;
+
+  /* Harus ada tanggal yang lebih lampau dan isinya memang sudah cocok. Kalau
+     seluruh berkas hanya memuat tanggal terakhir, tidak ada bukti apa pun
+     bahwa keduanya sejalan - misalnya PTR kosong sementara Prod berisi. */
+  var adaLampau = false;
+  function cekLampau(arr){
+    var x, dd, q;
+    for(x = 0; x < arr.length && !adaLampau; x++){
+      if(isMeta(arr[x])) continue;
+      dd = datesOf(arr[x]);
+      for(q = 0; q < dd.length; q++) if(dd[q] < maks){ adaLampau = true; break; }
+    }
+  }
+  cekLampau(la); if(!adaLampau) cekLampau(lb);
+  if(!adaLampau) return false;
+
+  /* setiap baris yang berbeda harus membawa tanggal itu, dan hanya itu */
+  var ada = false, gagal = false;
+  function periksa(uniq){
+    uniq.forEach(function(_, ln){
+      if(gagal || isMeta(ln)) return;
+      var ds = datesOf(ln), k;
+      if(!ds.length){ gagal = true; return; }
+      for(k = 0; k < ds.length; k++) if(ds[k] !== maks){ gagal = true; return; }
+      ada = true;
+    });
+  }
+  periksa(uA); periksa(uB);
+  return ada && !gagal;
+}
 
 function lineTimeOnly(a, b){
   if(a === b) return true;
@@ -1065,6 +1139,15 @@ function analyseText(row, ta, tb, trim){
     row.softReason = 'jam';
     row.note = 'Isi report cocok. Beda hanya pada jam cetak, tanggal cetak, nomor halaman, '
              + 'atau jumlah record di baris header/trailer.';
+    return;
+  }
+
+  if(latestDateOnly(la, lb, uA, uB)){
+    row.status = 'IDENTIK';
+    row.softReason = 'generate';
+    row.note = 'Isi report cocok. Seluruh tanggal yang sudah selesai sama persis; '
+             + 'yang berbeda hanya tanggal terakhir yang masih berjalan, '
+             + 'karena kedua report dibuat pada jam yang berbeda.';
     return;
   }
   row.status = 'BEDA_DATA';

@@ -7,6 +7,20 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 2.1 — 26 Oktober 2026
+
+- Beda yang **hanya terjadi pada tanggal data terakhir** dihitung cocok. Itu
+  sidik jari report yang dibuat pada jam berbeda: hari-hari yang sudah selesai
+  isinya sama persis, hanya hari yang masih berjalan yang belum lengkap.
+- Dua pengaman supaya aturan ini tidak menutupi masalah nyata:
+  (1) kalau ada tanggal lain ikut berbeda, berkasnya tetap BEDA DATA;
+  (2) harus ada tanggal lampau yang isinya sudah cocok — berkas yang hanya
+  memuat tanggal terakhir tidak ikut, karena tidak ada bukti kecocokan sama
+  sekali (misalnya PTR kosong sementara Production berisi).
+- Baris header dan trailer bergaya `RH;` dan `RT;` dikenali sebagai baris
+  keterangan, bukan baris data — jumlah record pada trailer mengikuti data,
+  jadi bukan perbedaan yang berdiri sendiri.
+
 ## 2.0 — 15 Oktober 2026
 
 - Berkas `.xlsx` dibandingkan **per isi sel**, bukan sebagai teks mentah.
