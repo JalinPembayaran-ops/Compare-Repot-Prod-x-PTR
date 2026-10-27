@@ -7,6 +7,18 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 2.2 — 27 Oktober 2026
+
+- Baris yang **bertukar posisi** dikenali sebagai **Beda Posisi Baris**, bukan
+  beda data. Nomor urut di kolom pertama ikut tertukar sehingga barisnya tidak
+  pernah sama persis — itu sebabnya selama ini terbaca BEDA DATA.
+- Kolom pertama baru diabaikan kalau angkanya benar-benar berurutan naik
+  satu-satu, supaya kolom jam atau nominal tidak ikut terbuang. Sisa baris yang
+  masih berbeda hanya boleh berupa baris keterangan.
+- Sebutan "beda urutan baris" disatukan menjadi **beda posisi baris**, karena
+  keduanya persoalan yang sama.
+- `Waktu Settlement :` dan sejenisnya dikenali sebagai baris keterangan.
+
 ## 2.1 — 26 Oktober 2026
 
 - Beda yang **hanya terjadi pada tanggal data terakhir** dihitung cocok. Itu

@@ -276,7 +276,7 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
 var SAMPLE_POS = 25, SAMPLE_UNIQ = 15, LINE_TRUNC = 400;
 /* Beda urutan baris, beda jam cetak dan beda format baris dihitung cocok;
    label ini dipakai banner ringkasan maupun tabel rincian. */
-var SOFT_LABEL = {urutan:'beda urutan baris', jam:'beda jam cetak',
+var SOFT_LABEL = {posisi:'beda posisi baris', jam:'beda jam cetak',
                   format:'beda format baris',
                   generate:'beda jam generate report'};
 var SM = {
@@ -288,7 +288,7 @@ var SM = {
 var META_PAT = [
   /^\s*F[HT]\s*\d+/, /^\s*R[HT]\s*[;|]/i,
   /\bHAL\s*:/, /\bTANGGAL\s*:/,
-  /\bKODE\s+(BANK|REPORT)\s*:/, /\bJAM\s*:/, /\bWAKTU\s+CETAK\b/
+  /\bKODE\s+(BANK|REPORT)\s*:/, /\bJAM\s*:/, /\bWAKTU\s+[A-Za-z]+\s*:/i
 ];
 function isMeta(s){ for(var i=0;i<META_PAT.length;i++) if(META_PAT[i].test(s)) return true; return false; }
 
@@ -749,8 +749,14 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.1';
+var APP_VERSION = '2.2';
 var CHANGELOG = [
+  ['2.2', '27 Okt 2026', [
+    'Baris yang bertukar posisi dikenali sebagai Beda Posisi Baris, bukan beda data. '
+      + 'Nomor urut di kolom pertama ikut tertukar sehingga barisnya tidak pernah sama persis.',
+    'Kolom pertama baru diabaikan kalau angkanya benar-benar berurutan naik satu-satu, '
+      + 'supaya kolom jam atau nominal tidak ikut terbuang.'
+  ]],
   ['2.1', '26 Okt 2026', [
     'Beda yang hanya terjadi pada tanggal data terakhir dihitung cocok: itu '
       + 'sidik jari report yang dibuat pada jam berbeda. Kalau ada tanggal lain '
@@ -867,6 +873,43 @@ function datesOf(line){
   var tok = line.match(RE_TOKEN) || [], out = [], i, d;
   for(i = 0; i < tok.length; i++){ d = normDate(tok[i]); if(d) out.push(d); }
   return out;
+}
+
+/* ================= beda posisi baris =================
+   Berkas yang barisnya bertukar posisi punya nomor urut yang ikut tertukar,
+   sehingga barisnya tidak pernah sama persis. Kalau kolom nomor urut itu
+   diabaikan dan isinya ternyata sama semua, yang berbeda hanya posisinya. */
+var RE_SEQ = /^\s*\d+\s+/;
+
+/* Kolom pertama baru dianggap nomor urut kalau angkanya benar-benar berurutan
+   naik satu-satu. Tanpa syarat ini, kolom jam atau nominal bisa ikut terbuang. */
+function seqRun(arr){
+  var n = 0, prev = null, i, m, v;
+  for(i = 0; i < arr.length; i++){
+    m = RE_SEQ.exec(arr[i]);
+    if(!m) continue;
+    v = parseInt(m[0], 10);
+    if(prev !== null && v !== prev + 1) return false;
+    prev = v; n++;
+  }
+  return n >= 10;
+}
+
+function positionOnly(la, lb){
+  if(la.length !== lb.length) return false;
+  if(!seqRun(la) || !seqRun(lb)) return false;
+
+  var ca = new Map(), cb = new Map(), i, k;
+  for(i = 0; i < la.length; i++){ k = la[i].replace(RE_SEQ, ''); ca.set(k, (ca.get(k)||0)+1); }
+  for(i = 0; i < lb.length; i++){ k = lb[i].replace(RE_SEQ, ''); cb.set(k, (cb.get(k)||0)+1); }
+
+  var sisa = [];
+  ca.forEach(function(v, k2){ if(v > (cb.get(k2)||0)) sisa.push(k2); });
+  cb.forEach(function(v, k2){ if(v > (ca.get(k2)||0)) sisa.push(k2); });
+
+  /* sisa hanya boleh baris keterangan - judul, jam cetak, jam settlement */
+  for(i = 0; i < sisa.length; i++) if(!isMeta(sisa[i])) return false;
+  return true;
 }
 
 function latestDateOnly(la, lb, uA, uB){
@@ -1055,7 +1098,7 @@ function analyseText(row, ta, tb, trim){
 
   if(nA === 0 && nB === 0){
     row.status = 'IDENTIK';
-    row.softReason = 'urutan';
+    row.softReason = 'posisi';
     row.note = 'Isi report cocok. Seluruh baris sama persis, hanya urutan barisnya '
       + 'yang berbeda (' + nf(shifted) + ' posisi bergeser).';
     return;
@@ -1139,6 +1182,14 @@ function analyseText(row, ta, tb, trim){
     row.softReason = 'jam';
     row.note = 'Isi report cocok. Beda hanya pada jam cetak, tanggal cetak, nomor halaman, '
              + 'atau jumlah record di baris header/trailer.';
+    return;
+  }
+
+  if(positionOnly(la, lb)){
+    row.status = 'IDENTIK';
+    row.softReason = 'posisi';
+    row.note = 'Isi report cocok. Baris-barisnya sama, hanya posisinya bertukar '
+             + 'sehingga nomor urut di kolom pertama ikut berubah.';
     return;
   }
 

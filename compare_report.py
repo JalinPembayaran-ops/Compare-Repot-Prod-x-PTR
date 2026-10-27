@@ -24,7 +24,7 @@ META_PAT = [
     re.compile(r'\bTANGGAL\s*:'),
     re.compile(r'\bKODE\s+(BANK|REPORT)\s*:'),
     re.compile(r'\bJAM\s*:'),
-    re.compile(r'\bWAKTU\s+CETAK\b'),
+    re.compile(r'\bWAKTU\s+[A-Za-z]+\s*:', re.IGNORECASE),
 ]
 
 
@@ -400,6 +400,39 @@ def dates_of(line):
     return [d for d in (norm_date(t) for t in RE_TOKEN.findall(line)) if d]
 
 
+RE_SEQ = re.compile(r'^\s*(\d+)\s+')
+
+
+def seq_run(arr):
+    """Kolom pertama baru dianggap nomor urut kalau angkanya benar-benar
+    berurutan naik satu-satu. Tanpa syarat ini, kolom jam atau nominal bisa
+    ikut terbuang."""
+    n, prev = 0, None
+    for ln in arr:
+        m = RE_SEQ.match(ln)
+        if not m:
+            continue
+        v = int(m.group(1))
+        if prev is not None and v != prev + 1:
+            return False
+        prev = v
+        n += 1
+    return n >= 10
+
+
+def position_only(la, lb):
+    """Baris-barisnya sama, hanya posisinya bertukar sehingga nomor urut di
+    kolom pertama ikut berubah."""
+    if len(la) != len(lb) or not seq_run(la) or not seq_run(lb):
+        return False
+    ca = Counter(RE_SEQ.sub('', l, count=1) for l in la)
+    cb = Counter(RE_SEQ.sub('', l, count=1) for l in lb)
+    sisa = [k for k, v in ca.items() if v > cb.get(k, 0)]
+    sisa += [k for k, v in cb.items() if v > ca.get(k, 0)]
+    # sisa hanya boleh baris keterangan - judul, jam cetak, jam settlement
+    return all(is_meta(k) for k in sisa)
+
+
 def latest_date_only(la, lb, only_a, only_b):
     """Beda yang hanya ada pada tanggal data terakhir.
 
@@ -561,7 +594,7 @@ def analyse(rel, a, b):
 
     if not only_a and not only_b:
         r['status'] = 'IDENTIK'
-        r['softReason'] = 'urutan'
+        r['softReason'] = 'posisi'
         r['note'] = ('Isi report cocok. Seluruh baris sama persis, hanya urutan '
                      'barisnya yang berbeda (%d posisi bergeser).' % shifted)
         return r
@@ -576,6 +609,11 @@ def analyse(rel, a, b):
         r['softReason'] = 'jam'
         r['note'] = ('Isi report cocok. Beda hanya pada jam cetak, tanggal cetak, '
                      'nomor halaman, atau jumlah record di baris header/trailer.')
+    elif position_only(la, lb):
+        r['status'] = 'IDENTIK'
+        r['softReason'] = 'posisi'
+        r['note'] = ('Isi report cocok. Baris-barisnya sama, hanya posisinya bertukar '
+                     'sehingga nomor urut di kolom pertama ikut berubah.')
     elif latest_date_only(la, lb, only_a, only_b):
         r['status'] = 'IDENTIK'
         r['softReason'] = 'generate'
@@ -782,7 +820,7 @@ var D = window.__DATA__, rows = D.rows, meta = D.meta;
 var lastFiles = {ptr: meta.filesPtr || [], prod: meta.filesProd || []};
 /* Beda urutan baris, beda jam cetak dan beda format baris dihitung cocok;
    label ini dipakai banner ringkasan maupun tabel rincian. */
-var SOFT_LABEL = {urutan:'beda urutan baris', jam:'beda jam cetak',
+var SOFT_LABEL = {posisi:'beda posisi baris', jam:'beda jam cetak',
                   format:'beda format baris',
                   generate:'beda jam generate report'};
 var SM = {
@@ -1004,8 +1042,14 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.1';
+var APP_VERSION = '2.2';
 var CHANGELOG = [
+  ['2.2', '27 Okt 2026', [
+    'Baris yang bertukar posisi dikenali sebagai Beda Posisi Baris, bukan beda data. '
+      + 'Nomor urut di kolom pertama ikut tertukar sehingga barisnya tidak pernah sama persis.',
+    'Kolom pertama baru diabaikan kalau angkanya benar-benar berurutan naik satu-satu, '
+      + 'supaya kolom jam atau nominal tidak ikut terbuang.'
+  ]],
   ['2.1', '26 Okt 2026', [
     'Beda yang hanya terjadi pada tanggal data terakhir dihitung cocok: itu '
       + 'sidik jari report yang dibuat pada jam berbeda. Kalau ada tanggal lain '
