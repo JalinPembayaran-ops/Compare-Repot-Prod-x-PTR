@@ -9,12 +9,12 @@ riwayat ini langsung dari dalam alatnya.
 
 ## 2.3 — 28 Oktober 2026
 
-- Subtotal per halaman () dihitung sebagai **angka
+- Subtotal per halaman (`SUB TOTAL ... /Page`) dihitung sebagai **angka
   turunan**. Begitu baris berpindah halaman, subtotalnya ikut berubah walau
   isinya sama, sehingga report yang hanya beda posisi tidak lagi terbaca
-  BEDA DATA. Terlihat pada  (3.062 baris subtotal
-  halaman) dan  (18 baris).
-- Pengamannya: **grand total** - baris  tanpa  - harus sama
+  BEDA DATA. Terlihat pada `SETTLE_JALN_ALTO_261028_BNF` (3.062 baris subtotal
+  halaman) dan `SETTLE_JALN_ARTA_261028_BNF` (18 baris).
+- Pengamannya: **grand total** — baris `TOTAL` tanpa `/Page` — harus sama
   persis di kedua sisi. Selisih nominal sekecil apa pun, baik di grand total
   maupun di baris data, tetap dilaporkan sebagai beda data.
 
