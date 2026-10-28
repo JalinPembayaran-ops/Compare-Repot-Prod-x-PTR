@@ -749,8 +749,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.2';
+var APP_VERSION = '2.3';
 var CHANGELOG = [
+  ['2.3', '28 Okt 2026', [
+    'Subtotal per halaman (SUB TOTAL ... /Page) dihitung sebagai angka turunan. '
+      + 'Begitu baris berpindah halaman, subtotalnya ikut berubah walau isinya sama, '
+      + 'sehingga report yang hanya beda posisi tidak lagi terbaca beda data.',
+    'Pengamannya: grand total - baris TOTAL tanpa /Page - harus sama persis di kedua '
+      + 'sisi. Selisih nominal sekecil apa pun tetap dilaporkan sebagai beda data.'
+  ]],
   ['2.2', '27 Okt 2026', [
     'Baris yang bertukar posisi dikenali sebagai Beda Posisi Baris, bukan beda data. '
       + 'Nomor urut di kolom pertama ikut tertukar sehingga barisnya tidak pernah sama persis.',
@@ -895,9 +902,24 @@ function seqRun(arr){
   return n >= 10;
 }
 
+/* Subtotal tiap halaman ikut berubah begitu baris berpindah halaman. Angka itu
+   turunan dari barisnya, bukan data yang berdiri sendiri. */
+var RE_PAGE_SUB = /TOTAL[^:]*\/\s*Page/i;
+
+/* Grand total - baris TOTAL yang bukan subtotal halaman. Inilah pengamannya:
+   kalau angka ini bergeser sedikit saja, berkasnya tetap dihitung beda data. */
+function grandTotals(arr){
+  var out = [], i;
+  for(i = 0; i < arr.length; i++)
+    if(/TOTAL/i.test(arr[i]) && !RE_PAGE_SUB.test(arr[i]))
+      out.push(arr[i].replace(/\s+/g, ' ').trim());
+  return out.join('\n');
+}
+
 function positionOnly(la, lb){
   if(la.length !== lb.length) return false;
   if(!seqRun(la) || !seqRun(lb)) return false;
+  if(grandTotals(la) !== grandTotals(lb)) return false;
 
   var ca = new Map(), cb = new Map(), i, k;
   for(i = 0; i < la.length; i++){ k = la[i].replace(RE_SEQ, ''); ca.set(k, (ca.get(k)||0)+1); }
@@ -907,8 +929,10 @@ function positionOnly(la, lb){
   ca.forEach(function(v, k2){ if(v > (cb.get(k2)||0)) sisa.push(k2); });
   cb.forEach(function(v, k2){ if(v > (ca.get(k2)||0)) sisa.push(k2); });
 
-  /* sisa hanya boleh baris keterangan - judul, jam cetak, jam settlement */
-  for(i = 0; i < sisa.length; i++) if(!isMeta(sisa[i])) return false;
+  /* sisa hanya boleh baris keterangan - judul, jam cetak, jam settlement -
+     atau subtotal halaman, yang angkanya mengikuti posisi baris */
+  for(i = 0; i < sisa.length; i++)
+    if(!isMeta(sisa[i]) && !RE_PAGE_SUB.test(sisa[i])) return false;
   return true;
 }
 
@@ -1189,7 +1213,8 @@ function analyseText(row, ta, tb, trim){
     row.status = 'IDENTIK';
     row.softReason = 'posisi';
     row.note = 'Isi report cocok. Baris-barisnya sama, hanya posisinya bertukar '
-             + 'sehingga nomor urut di kolom pertama ikut berubah.';
+             + 'sehingga nomor urut di kolom pertama dan subtotal per halaman ikut '
+             + 'berubah. Grand total kedua report sama persis.';
     return;
   }
 

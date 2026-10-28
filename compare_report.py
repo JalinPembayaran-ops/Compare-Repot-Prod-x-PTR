@@ -420,17 +420,32 @@ def seq_run(arr):
     return n >= 10
 
 
+RE_PAGE_SUB = re.compile(r'TOTAL[^:]*/\s*Page', re.IGNORECASE)
+
+
+def grand_totals(arr):
+    """Grand total - baris TOTAL yang bukan subtotal halaman. Inilah
+    pengamannya: kalau angka ini bergeser sedikit saja, berkasnya tetap
+    dihitung beda data."""
+    return '\n'.join(
+        re.sub(r'\s+', ' ', l).strip() for l in arr
+        if re.search(r'TOTAL', l, re.IGNORECASE) and not RE_PAGE_SUB.search(l))
+
+
 def position_only(la, lb):
     """Baris-barisnya sama, hanya posisinya bertukar sehingga nomor urut di
-    kolom pertama ikut berubah."""
+    kolom pertama dan subtotal per halaman ikut berubah."""
     if len(la) != len(lb) or not seq_run(la) or not seq_run(lb):
+        return False
+    if grand_totals(la) != grand_totals(lb):
         return False
     ca = Counter(RE_SEQ.sub('', l, count=1) for l in la)
     cb = Counter(RE_SEQ.sub('', l, count=1) for l in lb)
     sisa = [k for k, v in ca.items() if v > cb.get(k, 0)]
     sisa += [k for k, v in cb.items() if v > ca.get(k, 0)]
-    # sisa hanya boleh baris keterangan - judul, jam cetak, jam settlement
-    return all(is_meta(k) for k in sisa)
+    # sisa hanya boleh baris keterangan - judul, jam cetak, jam settlement -
+    # atau subtotal halaman, yang angkanya mengikuti posisi baris
+    return all(is_meta(k) or RE_PAGE_SUB.search(k) for k in sisa)
 
 
 def latest_date_only(la, lb, only_a, only_b):
@@ -613,7 +628,8 @@ def analyse(rel, a, b):
         r['status'] = 'IDENTIK'
         r['softReason'] = 'posisi'
         r['note'] = ('Isi report cocok. Baris-barisnya sama, hanya posisinya bertukar '
-                     'sehingga nomor urut di kolom pertama ikut berubah.')
+                     'sehingga nomor urut di kolom pertama dan subtotal per halaman '
+                     'ikut berubah. Grand total kedua report sama persis.')
     elif latest_date_only(la, lb, only_a, only_b):
         r['status'] = 'IDENTIK'
         r['softReason'] = 'generate'
@@ -1042,8 +1058,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.2';
+var APP_VERSION = '2.3';
 var CHANGELOG = [
+  ['2.3', '28 Okt 2026', [
+    'Subtotal per halaman (SUB TOTAL ... /Page) dihitung sebagai angka turunan. '
+      + 'Begitu baris berpindah halaman, subtotalnya ikut berubah walau isinya sama, '
+      + 'sehingga report yang hanya beda posisi tidak lagi terbaca beda data.',
+    'Pengamannya: grand total - baris TOTAL tanpa /Page - harus sama persis di kedua '
+      + 'sisi. Selisih nominal sekecil apa pun tetap dilaporkan sebagai beda data.'
+  ]],
   ['2.2', '27 Okt 2026', [
     'Baris yang bertukar posisi dikenali sebagai Beda Posisi Baris, bukan beda data. '
       + 'Nomor urut di kolom pertama ikut tertukar sehingga barisnya tidak pernah sama persis.',
