@@ -428,16 +428,23 @@ def grand_totals(arr):
 
 
 def position_only(la, lb):
-    """Baris-barisnya sama, hanya posisinya bertukar sehingga nomor urut di
-    kolom pertama dan subtotal per halaman ikut berubah."""
-    if len(la) != len(lb) or not seq_run(la) or not seq_run(lb):
-        return False
-    if len(seq_nums(la)) != len(seq_nums(lb)):
+    """Baris-barisnya sama, hanya posisinya bertukar.
+
+    Berlaku di semua jenis report. Kolom nomor urut hanya dibuang kalau report
+    ini memang punya; report tanpa kolom itu dibandingkan apa adanya. Baris
+    transaksi yang cuma ada di satu sisi tetap dilaporkan beda data."""
+    if len(la) != len(lb):
         return False
     if grand_totals(la) != grand_totals(lb):
         return False
-    ca = Counter(RE_SEQ.sub('', l, count=1) for l in la)
-    cb = Counter(RE_SEQ.sub('', l, count=1) for l in lb)
+    pakai_nomor = (seq_run(la) and seq_run(lb)
+                   and len(seq_nums(la)) == len(seq_nums(lb)))
+
+    def kunci(l):
+        return RE_SEQ.sub('', l, count=1) if pakai_nomor else l
+
+    ca = Counter(kunci(l) for l in la)
+    cb = Counter(kunci(l) for l in lb)
     sisa = [k for k, v in ca.items() if v > cb.get(k, 0)]
     sisa += [k for k, v in cb.items() if v > ca.get(k, 0)]
     # sisa hanya boleh baris keterangan - judul, jam cetak, jam settlement -
@@ -1055,8 +1062,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.4';
+var APP_VERSION = '2.5';
 var CHANGELOG = [
+  ['2.5', '30 Okt 2026', [
+    'Beda posisi baris kini berlaku di semua jenis report. Sebelumnya aturan ini hanya '
+      + 'jalan pada report yang punya kolom nomor urut; report tanpa kolom itu tidak pernah '
+      + 'ikut, padahal persoalannya sama.',
+    'Transaksi yang hanya ada di salah satu sisi tetap dilaporkan sebagai beda data - '
+      + 'yang dihitung cocok hanya transaksi yang ada di kedua sisi dan cuma bertukar posisi.'
+  ]],
   ['2.4', '30 Okt 2026', [
     'Report pendek ikut dikenali sebagai beda posisi baris. Sebelumnya kolom nomor '
       + 'urut baru dipercaya kalau ada minimal 10 baris bernomor, sehingga report seperti '

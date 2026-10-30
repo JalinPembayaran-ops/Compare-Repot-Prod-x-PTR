@@ -749,8 +749,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.4';
+var APP_VERSION = '2.5';
 var CHANGELOG = [
+  ['2.5', '30 Okt 2026', [
+    'Beda posisi baris kini berlaku di semua jenis report. Sebelumnya aturan ini hanya '
+      + 'jalan pada report yang punya kolom nomor urut; report tanpa kolom itu tidak pernah '
+      + 'ikut, padahal persoalannya sama.',
+    'Transaksi yang hanya ada di salah satu sisi tetap dilaporkan sebagai beda data - '
+      + 'yang dihitung cocok hanya transaksi yang ada di kedua sisi dan cuma bertukar posisi.'
+  ]],
   ['2.4', '30 Okt 2026', [
     'Report pendek ikut dikenali sebagai beda posisi baris. Sebelumnya kolom nomor '
       + 'urut baru dipercaya kalau ada minimal 10 baris bernomor, sehingga report seperti '
@@ -932,20 +939,26 @@ function grandTotals(arr){
 
 function positionOnly(la, lb){
   if(la.length !== lb.length) return false;
-  if(!seqRun(la) || !seqRun(lb)) return false;
-  if(seqNums(la).length !== seqNums(lb).length) return false;
   if(grandTotals(la) !== grandTotals(lb)) return false;
 
+  /* Kolom nomor urut hanya dibuang kalau report ini memang punya - angkanya
+     mulai dari 1, naik satu-satu, dan sebanyak itu juga di sisi sebelah.
+     Report tanpa kolom nomor urut dibandingkan apa adanya. */
+  var pakaiNomor = seqRun(la) && seqRun(lb)
+                && seqNums(la).length === seqNums(lb).length;
+  function kunci(l){ return pakaiNomor ? l.replace(RE_SEQ, '') : l; }
+
   var ca = new Map(), cb = new Map(), i, k;
-  for(i = 0; i < la.length; i++){ k = la[i].replace(RE_SEQ, ''); ca.set(k, (ca.get(k)||0)+1); }
-  for(i = 0; i < lb.length; i++){ k = lb[i].replace(RE_SEQ, ''); cb.set(k, (cb.get(k)||0)+1); }
+  for(i = 0; i < la.length; i++){ k = kunci(la[i]); ca.set(k, (ca.get(k)||0)+1); }
+  for(i = 0; i < lb.length; i++){ k = kunci(lb[i]); cb.set(k, (cb.get(k)||0)+1); }
 
   var sisa = [];
   ca.forEach(function(v, k2){ if(v > (cb.get(k2)||0)) sisa.push(k2); });
   cb.forEach(function(v, k2){ if(v > (ca.get(k2)||0)) sisa.push(k2); });
 
-  /* sisa hanya boleh baris keterangan - judul, jam cetak, jam settlement -
-     atau subtotal halaman, yang angkanya mengikuti posisi baris */
+  /* Sisa hanya boleh baris keterangan - judul, jam cetak, jam settlement -
+     atau subtotal halaman, yang angkanya mengikuti posisi baris. Baris
+     transaksi yang cuma ada di satu sisi jatuh ke sini dan tetap beda data. */
   for(i = 0; i < sisa.length; i++)
     if(!isMeta(sisa[i]) && !RE_PAGE_SUB.test(sisa[i])) return false;
   return true;

@@ -7,6 +7,20 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 2.5 — 30 Oktober 2026
+
+- **Beda posisi baris kini berlaku di semua jenis report.** Sebelumnya aturan
+  ini hanya jalan pada report yang punya kolom nomor urut, seperti SETTLE dan
+  DISPUTE. Report tanpa kolom itu — `Transaction-Data`, `Report-Harian-LINK`,
+  `RECON`, `Laporan-Fee-Marketing` dan lainnya — tidak pernah ikut, padahal
+  persoalannya sama: transaksinya ada di kedua sisi, hanya urutannya bergeser.
+- Kolom nomor urut sekarang cuma dibuang kalau report itu memang punya;
+  kalau tidak ada, barisnya dibandingkan apa adanya.
+- **Yang tidak berubah:** transaksi yang hanya ada di salah satu sisi tetap
+  dilaporkan BEDA DATA. Yang dihitung cocok hanya transaksi yang ada di kedua
+  sisi dan cuma bertukar posisi. Nominal yang berubah, transaksi yang hilang,
+  transaksi yang terduplikasi, dan selisih grand total tetap ketahuan.
+
 ## 2.4 — 30 Oktober 2026
 
 - **Report pendek** ikut dikenali sebagai Beda Posisi Baris. Sebelumnya kolom
