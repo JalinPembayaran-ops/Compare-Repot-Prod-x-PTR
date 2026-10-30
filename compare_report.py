@@ -403,21 +403,16 @@ def dates_of(line):
 RE_SEQ = re.compile(r'^\s*(\d+)\s+')
 
 
+def seq_nums(arr):
+    return [int(m.group(1)) for m in (RE_SEQ.match(l) for l in arr) if m]
+
+
 def seq_run(arr):
-    """Kolom pertama baru dianggap nomor urut kalau angkanya benar-benar
-    berurutan naik satu-satu. Tanpa syarat ini, kolom jam atau nominal bisa
-    ikut terbuang."""
-    n, prev = 0, None
-    for ln in arr:
-        m = RE_SEQ.match(ln)
-        if not m:
-            continue
-        v = int(m.group(1))
-        if prev is not None and v != prev + 1:
-            return False
-        prev = v
-        n += 1
-    return n >= 10
+    """Kolom pertama baru dipercaya sebagai nomor urut kalau angkanya mulai
+    dari 1 dan naik satu-satu tanpa putus. Tanpa syarat ini, kolom jam atau
+    nominal bisa ikut terbuang."""
+    v = seq_nums(arr)
+    return len(v) >= 2 and all(x == i + 1 for i, x in enumerate(v))
 
 
 RE_PAGE_SUB = re.compile(r'TOTAL[^:]*/\s*Page', re.IGNORECASE)
@@ -436,6 +431,8 @@ def position_only(la, lb):
     """Baris-barisnya sama, hanya posisinya bertukar sehingga nomor urut di
     kolom pertama dan subtotal per halaman ikut berubah."""
     if len(la) != len(lb) or not seq_run(la) or not seq_run(lb):
+        return False
+    if len(seq_nums(la)) != len(seq_nums(lb)):
         return False
     if grand_totals(la) != grand_totals(lb):
         return False
@@ -1058,8 +1055,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.3';
+var APP_VERSION = '2.4';
 var CHANGELOG = [
+  ['2.4', '30 Okt 2026', [
+    'Report pendek ikut dikenali sebagai beda posisi baris. Sebelumnya kolom nomor '
+      + 'urut baru dipercaya kalau ada minimal 10 baris bernomor, sehingga report seperti '
+      + 'DISPUTE yang hanya 8 baris tidak pernah lolos.',
+    'Ambang itu diganti syarat yang lebih ketat sekaligus lebih longgar: nomornya harus '
+      + 'mulai dari 1, berurutan naik satu-satu tanpa putus, dan jumlahnya sama di kedua sisi.'
+  ]],
   ['2.3', '28 Okt 2026', [
     'Subtotal per halaman (SUB TOTAL ... /Page) dihitung sebagai angka turunan. '
       + 'Begitu baris berpindah halaman, subtotalnya ikut berubah walau isinya sama, '

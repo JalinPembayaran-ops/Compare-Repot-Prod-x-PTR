@@ -7,6 +7,17 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 2.4 — 30 Oktober 2026
+
+- **Report pendek** ikut dikenali sebagai Beda Posisi Baris. Sebelumnya kolom
+  nomor urut baru dipercaya kalau ada minimal 10 baris bernomor, sehingga
+  `DISPUTE_JALN_ALTO_261029_ACQ` yang hanya punya 8 baris tidak pernah lolos
+  dan terbaca BEDA DATA padahal tiga transaksinya cuma bertukar posisi.
+- Ambang 10 baris itu diganti syarat yang lebih ketat sekaligus lebih longgar:
+  nomornya harus **mulai dari 1, berurutan naik satu-satu tanpa putus**, dan
+  jumlahnya sama di kedua sisi. Kolom angka yang tidak mulai dari 1 tidak lagi
+  dipercaya sebagai nomor urut, jadi kolom jam atau nominal tetap aman.
+
 ## 2.3 — 28 Oktober 2026
 
 - Subtotal per halaman (`SUB TOTAL ... /Page`) dihitung sebagai **angka

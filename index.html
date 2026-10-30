@@ -749,8 +749,15 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.3';
+var APP_VERSION = '2.4';
 var CHANGELOG = [
+  ['2.4', '30 Okt 2026', [
+    'Report pendek ikut dikenali sebagai beda posisi baris. Sebelumnya kolom nomor '
+      + 'urut baru dipercaya kalau ada minimal 10 baris bernomor, sehingga report seperti '
+      + 'DISPUTE yang hanya 8 baris tidak pernah lolos.',
+    'Ambang itu diganti syarat yang lebih ketat sekaligus lebih longgar: nomornya harus '
+      + 'mulai dari 1, berurutan naik satu-satu tanpa putus, dan jumlahnya sama di kedua sisi.'
+  ]],
   ['2.3', '28 Okt 2026', [
     'Subtotal per halaman (SUB TOTAL ... /Page) dihitung sebagai angka turunan. '
       + 'Begitu baris berpindah halaman, subtotalnya ikut berubah walau isinya sama, '
@@ -890,16 +897,23 @@ var RE_SEQ = /^\s*\d+\s+/;
 
 /* Kolom pertama baru dianggap nomor urut kalau angkanya benar-benar berurutan
    naik satu-satu. Tanpa syarat ini, kolom jam atau nominal bisa ikut terbuang. */
-function seqRun(arr){
-  var n = 0, prev = null, i, m, v;
+function seqNums(arr){
+  var out = [], i, m;
   for(i = 0; i < arr.length; i++){
     m = RE_SEQ.exec(arr[i]);
-    if(!m) continue;
-    v = parseInt(m[0], 10);
-    if(prev !== null && v !== prev + 1) return false;
-    prev = v; n++;
+    if(m) out.push(parseInt(m[0], 10));
   }
-  return n >= 10;
+  return out;
+}
+
+/* Kolom pertama baru dipercaya sebagai nomor urut kalau angkanya mulai dari 1
+   dan naik satu-satu tanpa putus. Tanpa syarat ini, kolom jam atau nominal
+   bisa ikut terbuang. */
+function seqRun(arr){
+  var v = seqNums(arr), i;
+  if(v.length < 2) return false;
+  for(i = 0; i < v.length; i++) if(v[i] !== i + 1) return false;
+  return true;
 }
 
 /* Subtotal tiap halaman ikut berubah begitu baris berpindah halaman. Angka itu
@@ -919,6 +933,7 @@ function grandTotals(arr){
 function positionOnly(la, lb){
   if(la.length !== lb.length) return false;
   if(!seqRun(la) || !seqRun(lb)) return false;
+  if(seqNums(la).length !== seqNums(lb).length) return false;
   if(grandTotals(la) !== grandTotals(lb)) return false;
 
   var ca = new Map(), cb = new Map(), i, k;
