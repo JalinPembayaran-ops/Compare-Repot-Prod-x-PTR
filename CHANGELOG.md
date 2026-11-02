@@ -7,6 +7,11 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 3.3 — 02 November 2026
+
+- Nama berkas **Excel** ikut memakai tanggal report, sama seperti unduhan
+  `.txt` — misalnya `ringkasan-ptr-vs-prod-20261031.xlsx`.
+
 ## 3.2 — 02 November 2026
 
 - Nama berkas ringkasan memakai **tanggal report**, misalnya
