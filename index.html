@@ -231,8 +231,8 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
       </select>
     </label>
     <label class="opt"><input type="checkbox" id="optTrim" checked> Abaikan spasi di akhir baris</label>
-    <button class="btn ghost dl" id="csv" hidden>Unduh Excel</button>
-    <button class="btn ghost dl biru" id="sumtxt" hidden>Unduh Ringkasan</button>
+    <button class="btn ghost dl" id="csv" hidden>Unduh Ringkasan Excel</button>
+    <button class="btn ghost dl biru" id="sumtxt" hidden>Unduh Ringkasan Txt</button>
   </div>
 
   <div class="progress" id="prog">
@@ -756,8 +756,14 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '3.3';
+var APP_VERSION = '3.4';
 var CHANGELOG = [
+  ['3.4', '02 Nov 2026', [
+    'Nama tombol diperjelas: Unduh Ringkasan Excel dan Unduh Ringkasan Txt, supaya '
+      + 'keduanya jelas sama-sama ringkasan seluruh hasil, hanya beda bentuk berkasnya. '
+      + 'Tombol di dalam rincian tetap Unduh Excel karena isinya lain - rincian satu '
+      + 'berkas, bukan ringkasan.'
+  ]],
   ['3.3', '02 Nov 2026', [
     'Nama berkas Excel ikut memakai tanggal report, sama seperti unduhan .txt - '
       + 'misalnya ringkasan-ptr-vs-prod-20261031.xlsx.'
@@ -1697,7 +1703,7 @@ function detailHTML(r){
     var sisi = (nDupD >= nDupP) ? 'Production' : 'PTR';
     h += '<div class="dhead">Baris transaksi yang dobel di ' + sisi + '</div>'
        + '<div class="hint">Ditampilkan paling banyak 20 baris. '
-       + 'Tombol Unduh Ringkasan memuat seluruhnya.</div>'
+       + 'Tombol Unduh Ringkasan Txt memuat seluruhnya.</div>'
        + dd.slice(0, 20).map(function(x){
            return '<div class="pair"><div class="plab">' + x.kali + ' kali</div>'
                 + '<pre>' + esc(x.baris) + '</pre></div>';

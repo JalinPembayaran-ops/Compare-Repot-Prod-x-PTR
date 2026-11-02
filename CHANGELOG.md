@@ -7,6 +7,14 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 3.4 — 02 November 2026
+
+- Nama tombol diperjelas: **Unduh Ringkasan Excel** dan **Unduh Ringkasan
+  Txt**, supaya keduanya jelas sama-sama ringkasan seluruh hasil — hanya beda
+  bentuk berkasnya.
+- Tombol di dalam rincian tetap **Unduh Excel**, karena isinya lain: rincian
+  satu berkas, bukan ringkasan seluruh compare.
+
 ## 3.3 — 02 November 2026
 
 - Nama berkas **Excel** ikut memakai tanggal report, sama seperti unduhan
