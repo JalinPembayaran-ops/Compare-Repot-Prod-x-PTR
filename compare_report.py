@@ -439,6 +439,42 @@ def kosmetik_sama(la, lb):
     return 'posisi' if Counter(ra) == Counter(rb) else None
 
 
+RE_ID_TRX = re.compile(r'[0-9]{12,}')
+RE_GRP_TRX = re.compile(r'[0-9]+')
+
+
+def baris_trx(l):
+    """Baris yang benar-benar transaksi: punya identitas panjang - nomor
+    kartu, rekening atau RRN minimal 12 angka - dan sedikitnya tiga kelompok
+    angka. Baris rekap bernilai nol, baris keterangan dan subtotal halaman
+    tidak ikut, karena baris seperti itu memang berulang."""
+    if not l.strip() or is_meta(l) or RE_PAGE_SUB.search(l):
+        return False
+    if not RE_ID_TRX.search(l):
+        return False
+    return len(RE_GRP_TRX.findall(l)) >= 3
+
+
+def cari_dobel(arr):
+    """Baris transaksi yang muncul lebih dari sekali di satu berkas."""
+    if not arr:
+        return []
+    pakai = seq_run(arr)
+    c = Counter()
+    for l in arr:
+        if not baris_trx(l):
+            continue
+        c[RE_SEQ.sub('', l, count=1) if pakai else l] += 1
+    out = [{'baris': k, 'kali': v} for k, v in c.items() if v > 1]
+    out.sort(key=lambda x: -x['kali'])
+    return out
+
+
+def lebih_dobel(d):
+    """Berapa baris berlebih - dua kali muncul berarti satu baris berlebih."""
+    return sum(x['kali'] - 1 for x in (d or []))
+
+
 RE_SEQ = re.compile(r'^\s*(\d+)\s+')
 
 
@@ -602,6 +638,7 @@ def blank(rel):
         'linesPtr': None, 'linesProd': None,
         'onlyPtrRows': 0, 'onlyProdRows': 0, 'posDiff': 0,
         'samplesPos': [], 'samplesPtr': [], 'samplesProd': [],
+        'dupPtr': [], 'dupProd': [],
         'codes': [], 'codesSame': 0, 'codesPages': [], 'codeRows': [],
         'softReason': None, 'lembar': False,
         'eolPtr': None, 'eolProd': None,
@@ -1111,8 +1148,18 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.8';
+var APP_VERSION = '2.9';
 var CHANGELOG = [
+  ['2.9', '02 Nov 2026', [
+    'Transaksi dobel di dalam satu report kini dilaporkan: baris transaksi yang sama '
+      + 'persis muncul lebih dari sekali. Dihitung terpisah untuk PTR dan Production, '
+      + 'dan tetap dilaporkan walau kedua report isinya sama persis.',
+    'Yang dihitung hanya baris yang benar-benar transaksi - punya nomor kartu, rekening '
+      + 'atau RRN minimal 12 angka dan sedikitnya tiga kelompok angka. Baris rekap '
+      + 'bernilai nol dan baris keterangan tidak ikut, karena memang berulang.',
+    'Tombol Unduh Ringkasan: satu berkas teks berisi seluruh hasil compare, supaya '
+      + 'tidak perlu membuka report satu per satu.'
+  ]],
   ['2.8', '02 Nov 2026', [
     'Pemeriksaan jarak spasi/huruf dipindah ke belakang pemeriksaan beda posisi baris. '
       + 'Sebelumnya berkas yang sebenarnya cuma bertukar posisi ikut berlabel beda jarak '

@@ -226,6 +226,7 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
     </label>
     <label class="opt"><input type="checkbox" id="optTrim" checked> Abaikan spasi di akhir baris</label>
     <button class="btn ghost" id="csv" hidden>Unduh Excel</button>
+    <button class="btn ghost" id="sumtxt" hidden>Unduh Ringkasan</button>
   </div>
 
   <div class="progress" id="prog">
@@ -749,8 +750,18 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.8';
+var APP_VERSION = '2.9';
 var CHANGELOG = [
+  ['2.9', '02 Nov 2026', [
+    'Transaksi dobel di dalam satu report kini dilaporkan: baris transaksi yang sama '
+      + 'persis muncul lebih dari sekali. Dihitung terpisah untuk PTR dan Production, '
+      + 'dan tetap dilaporkan walau kedua report isinya sama persis.',
+    'Yang dihitung hanya baris yang benar-benar transaksi - punya nomor kartu, rekening '
+      + 'atau RRN minimal 12 angka dan sedikitnya tiga kelompok angka. Baris rekap '
+      + 'bernilai nol dan baris keterangan tidak ikut, karena memang berulang.',
+    'Tombol Unduh Ringkasan: satu berkas teks berisi seluruh hasil compare, supaya '
+      + 'tidak perlu membuka report satu per satu.'
+  ]],
   ['2.8', '02 Nov 2026', [
     'Pemeriksaan jarak spasi/huruf dipindah ke belakang pemeriksaan beda posisi baris. '
       + 'Sebelumnya berkas yang sebenarnya cuma bertukar posisi ikut berlabel beda jarak '
@@ -914,6 +925,40 @@ function datesOf(line){
   var tok = line.match(RE_TOKEN) || [], out = [], i, d;
   for(i = 0; i < tok.length; i++){ d = normDate(tok[i]); if(d) out.push(d); }
   return out;
+}
+
+/* ============ transaksi dobel di dalam satu report ============
+   Dobel artinya satu baris transaksi yang sama persis muncul lebih dari
+   sekali di satu berkas. Yang dihitung hanya baris yang benar-benar
+   transaksi: punya identitas panjang - nomor kartu, rekening atau RRN
+   minimal 12 angka - dan sedikitnya tiga kelompok angka. Baris rekap
+   bernilai nol, baris keterangan dan subtotal halaman tidak ikut, karena
+   baris seperti itu memang berulang. */
+var RE_ID_TRX = /[0-9]{12,}/;
+
+function barisTrx(l){
+  if(!l.trim() || isMeta(l) || RE_PAGE_SUB.test(l)) return false;
+  if(!RE_ID_TRX.test(l)) return false;
+  return (l.match(/[0-9]+/g) || []).length >= 3;
+}
+
+function cariDobel(arr){
+  var pakai = seqRun(arr), c = new Map(), i, k, out = [];
+  for(i = 0; i < arr.length; i++){
+    if(!barisTrx(arr[i])) continue;
+    k = pakai ? arr[i].replace(RE_SEQ, '') : arr[i];
+    c.set(k, (c.get(k) || 0) + 1);
+  }
+  c.forEach(function(v, k2){ if(v > 1) out.push({baris: k2, kali: v}); });
+  out.sort(function(x, y){ return y.kali - x.kali; });
+  return out;
+}
+
+/* berapa baris berlebih - dua kali muncul berarti satu baris berlebih */
+function lebihDobel(d){
+  var n = 0, i;
+  for(i = 0; d && i < d.length; i++) n += d[i].kali - 1;
+  return n;
 }
 
 /* ============ beda jarak spasi / besar-kecil huruf ============
@@ -1179,12 +1224,14 @@ function blankRow(name, folder){
     eolPtr:null, eolProd:null,
     sizePtr:null, sizeProd:null, linesPtr:null, linesProd:null,
     onlyPtrRows:0, onlyProdRows:0, posDiff:0,
-    samplesPos:[], samplesPtr:[], samplesProd:[], status:'', note:'' };
+    samplesPos:[], samplesPtr:[], samplesProd:[], dupPtr:[], dupProd:[],
+    status:'', note:'' };
 }
 
 function analyseText(row, ta, tb, trim){
   var la = splitLines(ta, trim), lb = splitLines(tb, trim);
   row.linesPtr = la.length; row.linesProd = lb.length;
+  row.dupPtr = cariDobel(la); row.dupProd = cariDobel(lb);
 
   var A = sectionScan(la), B = sectionScan(lb);
   codeDiff(row, A, B);
@@ -1414,7 +1461,14 @@ function compare(){
     }).then(function(identical){
       if(identical){
         r.status = 'IDENTIK'; r.note = 'Sudah OK.';
-        return;
+        /* isinya sama persis, tapi transaksi dobel di dalamnya tetap dilaporkan */
+        if(fa.size > LIMIT) return;
+        return readForCompare(fa, trim).then(function(res){
+          if(res.jenis === 'biner') return;
+          var la = splitLines(res.text, trim);
+          r.linesPtr = r.linesProd = la.length;
+          r.dupPtr = cariDobel(la); r.dupProd = r.dupPtr;
+        }).catch(function(){ /* dobel tidak terbaca - biarkan kosong */ });
       }
       if(Math.max(fa.size, fb.size) > LIMIT){
         r.status = 'BEDA_DATA';
@@ -1456,6 +1510,7 @@ function compare(){
     document.getElementById('run').disabled = false;
     document.getElementById('cancel').hidden = true;
     document.getElementById('csv').hidden = false;
+    document.getElementById('sumtxt').hidden = false;
     var order = {BEDA_DATA:0, HANYA_PTR:1, HANYA_PROD:2, BEDA_URUTAN:3,
                  BEDA_HEADER:4, BEDA_FORMAT:5, IDENTIK:6};
     rows.sort(function(x,y){
@@ -1604,6 +1659,25 @@ function detailHTML(r){
   if(r.onlyPtrRows || r.onlyProdRows)
     h+='<p class="note"><b>'+nf(r.onlyPtrRows)+'</b> baris hanya ada di PTR &middot; <b>'
       +nf(r.onlyProdRows)+'</b> baris hanya ada di Production</p>';
+
+  var nDupP = lebihDobel(r.dupPtr), nDupD = lebihDobel(r.dupProd);
+  if(nDupP || nDupD){
+    var sama = nDupP === nDupD && r.status === 'IDENTIK';
+    h += '<p class="note cbad">Transaksi dobel di dalam report: <b>' + nf(nDupP)
+       + '</b> baris berlebih di PTR &middot; <b>' + nf(nDupD)
+       + '</b> baris berlebih di Production.'
+       + (sama ? ' Jumlahnya sama di kedua sisi, jadi ini bawaan datanya.' : '')
+       + '</p>';
+    var dd = (nDupD >= nDupP) ? r.dupProd : r.dupPtr;
+    var sisi = (nDupD >= nDupP) ? 'Production' : 'PTR';
+    h += '<div class="dhead">Baris transaksi yang dobel di ' + sisi + '</div>'
+       + '<div class="hint">Ditampilkan paling banyak 20 baris. '
+       + 'Tombol Unduh Ringkasan memuat seluruhnya.</div>'
+       + dd.slice(0, 20).map(function(x){
+           return '<div class="pair"><div class="plab">' + x.kali + ' kali</div>'
+                + '<pre>' + esc(x.baris) + '</pre></div>';
+         }).join('');
+  }
 
   if(r.eolPtr && r.eolProd && r.eolPtr !== r.eolProd)
     h+='<p class="note cbad">Akhiran baris berbeda: PTR memakai <b>'+esc(r.eolPtr)
@@ -2126,6 +2200,215 @@ modal.onclick=function(e){ if(e.target===modal) closeDlg(); };
 document.addEventListener('keydown', function(e){ if(e.key==='Escape'&&!modal.hidden) closeDlg(); });
 
 /* ================= ekspor CSV ================= */
+/* ===================== ringkasan seluruh compare (.txt) =====================
+   Satu berkas teks berisi seluruh hasil, supaya tidak perlu membuka report
+   satu per satu. Isinya hanya yang memang diketahui alat ini - tidak ada
+   angka yang dikarang. */
+function garis(c){ var s = '', i; for(i = 0; i < 78; i++) s += c; return s; }
+
+function duaDigit(n){ return (n < 10 ? '0' : '') + n; }
+
+function capTgl(d){
+  return duaDigit(d.getDate()) + '/' + duaDigit(d.getMonth() + 1) + '/'
+       + d.getFullYear() + ' ' + duaDigit(d.getHours()) + ':'
+       + duaDigit(d.getMinutes());
+}
+
+function ringkasanTeks(){
+  var L = [], i;
+  function t(x){ L.push(x === undefined ? '' : x); }
+
+  var beda   = rows.filter(function(r){ return r.status === 'BEDA_DATA'; });
+  var hanyaP = rows.filter(function(r){ return r.status === 'HANYA_PTR'; });
+  var hanyaD = rows.filter(function(r){ return r.status === 'HANYA_PROD'; });
+  var cocok  = rows.filter(function(r){ return r.status === 'IDENTIK'; });
+  var lunak  = cocok.filter(function(r){ return r.softReason; });
+  var persis = cocok.filter(function(r){ return !r.softReason; });
+  var dobel  = rows.filter(function(r){
+    return lebihDobel(r.dupPtr) || lebihDobel(r.dupProd); });
+
+  t('RINGKASAN COMPARE PTR vs PRODUCTION');
+  t('Dibuat        : ' + capTgl(new Date()));
+  t('Alat          : Compare Report PTR vs Prod v' + APP_VERSION);
+  t();
+  t('Perbandingan isi mengabaikan urutan baris dan spasi di akhir baris.');
+  t('Dobel artinya satu baris transaksi yang sama muncul lebih dari sekali');
+  t('di satu berkas. Baris rekap bernilai nol dan baris keterangan tidak');
+  t('ikut dihitung, karena baris seperti itu memang berulang.');
+  t();
+  t('File yang ada di kedua sisi : ' + nf(rows.length - hanyaP.length - hanyaD.length));
+  t('Isi data sama               : ' + nf(cocok.length));
+  t('   - sama persis            : ' + nf(persis.length));
+  t('   - cocok dengan catatan   : ' + nf(lunak.length));
+  t('Isi data beda               : ' + nf(beda.length));
+  t('Hanya ada di PTR            : ' + nf(hanyaP.length));
+  t('Hanya ada di Production     : ' + nf(hanyaD.length));
+  t('Punya transaksi dobel       : ' + nf(dobel.length) + ' file');
+  t();
+
+  /* ---------------------------------------------------- A. isi data beda */
+  t();
+  t(garis('='));
+  t('A. FILE YANG DATANYA BEDA (' + nf(beda.length) + ')');
+  t(garis('='));
+  if(!beda.length) t('Tidak ada.');
+  beda.forEach(function(r, k){
+    t();
+    t(garis('-'));
+    t((k + 1) + '. ' + r.name + (r.name2 ? '  <-> ' + r.name2 : ''));
+    t(garis('-'));
+    t('Folder         : ' + r.folder);
+    t('Baris          : ' + nf(r.linesPtr) + ' di PTR, ' + nf(r.linesProd) + ' di Production');
+    t('Hanya di PTR   : ' + nf(r.onlyPtrRows) + ' baris');
+    t('Hanya di Prod  : ' + nf(r.onlyProdRows) + ' baris');
+    var dp = lebihDobel(r.dupPtr), dd = lebihDobel(r.dupProd);
+    t('Transaksi dobel: ' + (dp || dd ? nf(dp) + ' berlebih di PTR, ' + nf(dd)
+                                        + ' berlebih di Production' : 'tidak ada'));
+    if(r.eolPtr && r.eolProd && r.eolPtr !== r.eolProd)
+      t('Akhiran baris  : PTR ' + r.eolPtr + ', Production ' + r.eolProd);
+    if(r.codeRows && r.codeRows.length){
+      t();
+      t('Kode report terdampak:');
+      r.codeRows.forEach(function(c){
+        var st = c.status === 'HANYA_PTR'  ? 'hanya ada di PTR'
+               : c.status === 'HANYA_PROD' ? 'tidak ada di PTR' : 'beda isi';
+        t('  ' + pad(c.code || '(sebelum header)', 18) + pad(st, 20)
+          + 'PTR ' + nf(c.ptr) + ' / Prod ' + nf(c.prod) + ' baris beda'
+          + (c.title ? '   ' + c.title : ''));
+      });
+    }
+    if(dd || dp){
+      var sisi = dd >= dp ? 'Production' : 'PTR';
+      var arr  = dd >= dp ? r.dupProd : r.dupPtr;
+      t();
+      t('Baris transaksi yang dobel di ' + sisi + ':');
+      arr.forEach(function(x){ t('  [' + x.kali + 'x] ' + x.baris); });
+    }
+    if(r.samplesPos && r.samplesPos.length){
+      t();
+      t('Contoh baris yang isinya berbeda (transaksi yang sama, disandingkan):');
+      r.samplesPos.forEach(function(s){
+        t('  baris ' + s.no + (s.noProd && s.noProd !== s.no ? ' / ' + s.noProd : '')
+          + (s.code ? '   KODE REPORT ' + s.code : ''));
+        t('    PTR  ' + s.ptr);
+        t('    PROD ' + s.prod);
+      });
+    }
+    if(r.samplesPtr && r.samplesPtr.length){
+      t();
+      t('Baris yang tidak punya pasangan di Production:');
+      r.samplesPtr.forEach(function(s){ t('  br.' + s.no + '  ' + s.text); });
+    }
+    if(r.samplesProd && r.samplesProd.length){
+      t();
+      t('Baris yang tidak punya pasangan di PTR:');
+      r.samplesProd.forEach(function(s){ t('  br.' + s.no + '  ' + s.text); });
+    }
+  });
+
+  /* ------------------------------------------- B. cocok dengan catatan */
+  t();
+  t();
+  t(garis('='));
+  t('B. COCOK DENGAN CATATAN (' + nf(lunak.length) + ')');
+  t(garis('='));
+  if(!lunak.length) t('Tidak ada.');
+  var byReason = {};
+  lunak.forEach(function(r){
+    (byReason[r.softReason] = byReason[r.softReason] || []).push(r); });
+  Object.keys(byReason).forEach(function(k){
+    t();
+    t(SOFT_LABEL[k].toUpperCase() + ' (' + nf(byReason[k].length) + ')');
+    byReason[k].forEach(function(r){ t('  ' + r.folder + '/' + r.name); });
+  });
+
+  /* --------------------------------------------------- C. transaksi dobel */
+  t();
+  t();
+  t(garis('='));
+  t('C. REPORT YANG PUNYA TRANSAKSI DOBEL (' + nf(dobel.length) + ')');
+  t(garis('='));
+  if(!dobel.length){
+    t('Tidak ada.');
+  } else {
+    t(pad('File', 50) + pad('PTR', 10) + pad('Prod', 10) + 'Status');
+    t(garis('-'));
+    dobel.forEach(function(r){
+      var dp = lebihDobel(r.dupPtr), dd = lebihDobel(r.dupProd);
+      t(pad(r.name, 50) + pad(nf(dp), 10) + pad(nf(dd), 10)
+        + (dp === dd ? 'sama di kedua sisi' : 'hanya sebelah'));
+    });
+    t();
+    t('Angka di atas adalah jumlah baris berlebih: muncul dua kali berarti');
+    t('satu baris berlebih. Rincian barisnya ada di bagian A untuk file yang');
+    t('datanya beda, dan di bawah ini untuk file yang datanya sama.');
+    dobel.forEach(function(r){
+      if(r.status === 'BEDA_DATA') return;
+      var arr = lebihDobel(r.dupProd) >= lebihDobel(r.dupPtr) ? r.dupProd : r.dupPtr;
+      if(!arr.length) return;
+      t();
+      t(garis('-'));
+      t(r.folder + '/' + r.name + '  (' + SM[r.status][0] + ')');
+      t(garis('-'));
+      arr.forEach(function(x){ t('  [' + x.kali + 'x] ' + x.baris); });
+    });
+  }
+
+  /* ------------------------------------------------------ D/E/F. daftar */
+  function daftar(judul, arr, ket){
+    t();
+    t();
+    t(garis('='));
+    t(judul + ' (' + nf(arr.length) + ')');
+    t(garis('='));
+    if(ket) { t(ket); t(); }
+    if(!arr.length) t('Tidak ada.');
+    arr.forEach(function(r){ t('  ' + r.folder + '/' + r.name); });
+  }
+  daftar('D. ISI SAMA PERSIS', persis);
+  daftar('E. HANYA ADA DI PTR', hanyaP,
+         'Report ini tidak diproduksi di Production.');
+  daftar('F. HANYA ADA DI PRODUCTION', hanyaD,
+         'Report ini tidak diproduksi di PTR.');
+
+  /* --------------------------------------------- G. kelengkapan jenis */
+  var T = checkTypes(lastFiles.ptr, lastFiles.prod);
+  var LBL = {ADA:'Ada', HANYA_PTR:'Hanya di PTR',
+             HANYA_PROD:'Hanya di Prod', TIDAK_ADA:'TIDAK DITEMUKAN'};
+  t();
+  t();
+  t(garis('='));
+  t('G. KELENGKAPAN JENIS REPORT');
+  t(garis('='));
+  t(pad('Jenis Report', 46) + pad('PTR', 7) + pad('Prod', 7) + 'Status');
+  t(garis('-'));
+  T.rows.forEach(function(x){
+    t(pad(x.pat, 46) + pad(nf(x.ptr), 7) + pad(nf(x.prod), 7) + LBL[x.status]);
+  });
+
+  return L.join('\r\n');
+}
+
+function pad(s, n){
+  s = String(s === null || s === undefined ? '' : s);
+  while(s.length < n) s += ' ';
+  return s + (s.length > n ? '  ' : '');
+}
+
+document.getElementById('sumtxt').onclick = function(){
+  var btn = document.getElementById('sumtxt'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Menyiapkan...';
+  try {
+    var teks = ringkasanTeks();
+    saveBlob(new Blob([teks], {type: 'text/plain;charset=utf-8'}),
+             'ringkasan-ptr-vs-prod.txt');
+    btn.textContent = label;
+  } catch(err){
+    btn.textContent = 'Gagal: ' + err;
+  }
+  btn.disabled = false;
+};
+
 document.getElementById('csv').onclick = function(){
   var btn = document.getElementById('csv'), label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Menyiapkan...';

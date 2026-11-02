@@ -7,6 +7,23 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 2.9 — 02 November 2026
+
+- **Transaksi dobel di dalam satu report** kini dilaporkan: baris transaksi
+  yang sama persis muncul lebih dari sekali. Dihitung terpisah untuk PTR dan
+  Production, dan tetap dilaporkan walau kedua report isinya sama persis —
+  karena dobel di kedua sisi berarti bawaan datanya, bukan selisih PTR.
+- Yang dihitung hanya baris yang benar-benar transaksi: punya identitas
+  panjang (nomor kartu, rekening atau RRN minimal 12 angka) dan sedikitnya
+  tiga kelompok angka. Baris rekap bernilai nol, baris keterangan dan subtotal
+  halaman tidak ikut, karena baris seperti itu memang berulang. Tanpa saringan
+  ini, 203 dari 495 berkas akan tertandai dobel padahal bukan.
+- Tombol **Unduh Ringkasan**: satu berkas `.txt` berisi seluruh hasil compare
+  — file yang datanya beda beserta contoh barisnya, yang cocok dengan catatan,
+  daftar report yang punya transaksi dobel, yang sama persis, yang hanya ada
+  di satu sisi, dan kelengkapan jenis report. Supaya tidak perlu membuka
+  report satu per satu.
+
 ## 2.8 — 02 November 2026
 
 - Pemeriksaan jarak spasi/huruf **dipindah ke belakang** pemeriksaan beda
