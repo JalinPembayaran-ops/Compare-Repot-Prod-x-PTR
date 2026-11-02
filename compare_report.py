@@ -1148,8 +1148,12 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.9';
+var APP_VERSION = '3.0';
 var CHANGELOG = [
+  ['3.0', '02 Nov 2026', [
+    'Tombol Unduh Excel dan Unduh Ringkasan diberi warna penuh - hijau dan biru - '
+      + 'supaya tidak terlewat. Sebelumnya keduanya bergaya samar.'
+  ]],
   ['2.9', '02 Nov 2026', [
     'Transaksi dobel di dalam satu report kini dilaporkan: baris transaksi yang sama '
       + 'persis muncul lebih dari sekali. Dihitung terpisah untuk PTR dan Production, '

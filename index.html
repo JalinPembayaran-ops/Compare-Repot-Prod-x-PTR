@@ -52,6 +52,12 @@ h3.sec{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--
 .btn.primary:hover{color:#fff;opacity:.9}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .btn.ghost{background:none;font-size:12px;padding:5px 10px}
+/* tombol unduh diberi warna penuh supaya tidak terlewat */
+.btn.dl{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600;
+        font-size:12.5px;padding:6px 13px}
+.btn.dl:hover{background:var(--ok);border-color:var(--ok);color:#fff;opacity:.88}
+.btn.dl.biru{background:var(--ptr);border-color:var(--ptr)}
+.btn.dl.biru:hover{background:var(--ptr);border-color:var(--ptr)}
 .zstat{margin-top:11px;font-size:12.5px;color:var(--tx2);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .zstat b{color:var(--tx)}
 .filelist{margin-top:9px;max-height:132px;overflow:auto;border:1px solid var(--line);
@@ -225,8 +231,8 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
       </select>
     </label>
     <label class="opt"><input type="checkbox" id="optTrim" checked> Abaikan spasi di akhir baris</label>
-    <button class="btn ghost" id="csv" hidden>Unduh Excel</button>
-    <button class="btn ghost" id="sumtxt" hidden>Unduh Ringkasan</button>
+    <button class="btn ghost dl" id="csv" hidden>Unduh Excel</button>
+    <button class="btn ghost dl biru" id="sumtxt" hidden>Unduh Ringkasan</button>
   </div>
 
   <div class="progress" id="prog">
@@ -750,8 +756,12 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.9';
+var APP_VERSION = '3.0';
 var CHANGELOG = [
+  ['3.0', '02 Nov 2026', [
+    'Tombol Unduh Excel dan Unduh Ringkasan diberi warna penuh - hijau dan biru - '
+      + 'supaya tidak terlewat. Sebelumnya keduanya bergaya samar.'
+  ]],
   ['2.9', '02 Nov 2026', [
     'Transaksi dobel di dalam satu report kini dilaporkan: baris transaksi yang sama '
       + 'persis muncul lebih dari sekali. Dihitung terpisah untuk PTR dan Production, '

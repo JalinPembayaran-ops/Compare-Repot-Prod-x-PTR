@@ -7,6 +7,12 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 3.0 — 02 November 2026
+
+- Tombol **Unduh Excel** dan **Unduh Ringkasan** diberi warna penuh — hijau
+  dan biru — supaya tidak terlewat. Sebelumnya keduanya bergaya samar dan
+  nyaris tidak terlihat di antara pilihan lain.
+
 ## 2.9 — 02 November 2026
 
 - **Transaksi dobel di dalam satu report** kini dilaporkan: baris transaksi
