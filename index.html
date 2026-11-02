@@ -756,8 +756,19 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '3.0';
+var APP_VERSION = '3.2';
 var CHANGELOG = [
+  ['3.2', '02 Nov 2026', [
+    'Nama berkas ringkasan memakai tanggal report, misalnya ringkasan-ptr-vs-prod-20261031.txt. '
+      + 'Tanggalnya diambil dari nama folder kalau berupa YYMMDD, kalau tidak dari nama '
+      + 'berkas - yang paling sering muncul yang dipakai.',
+    'Tanggal report ikut dicantumkan di kepala ringkasan.'
+  ]],
+  ['3.1', '02 Nov 2026', [
+    'Di ringkasan .txt, bagian Cocok Dengan Catatan cukup menyebut jumlah file per '
+      + 'alasan. Nama filenya tidak lagi didaftar karena tidak perlu ditindaklanjuti, '
+      + 'sehingga ringkasannya jauh lebih pendek dan yang penting lebih menonjol.'
+  ]],
   ['3.0', '02 Nov 2026', [
     'Tombol Unduh Excel dan Unduh Ringkasan diberi warna penuh - hijau dan biru - '
       + 'supaya tidak terlewat. Sebelumnya keduanya bergaya samar.'
@@ -2224,6 +2235,30 @@ function capTgl(d){
        + duaDigit(d.getMinutes());
 }
 
+/* Tanggal report diambil dari nama folder kalau berupa YYMMDD, kalau tidak
+   dari nama berkas. Yang paling sering muncul yang dipakai. */
+function sahTglReport(v){
+  var b = +v.slice(2, 4), h = +v.slice(4, 6);
+  return b >= 1 && b <= 12 && h >= 1 && h <= 31;
+}
+
+function tglReport(){
+  var c = new Map(), best = '', bn = 0;
+  function tambah(v){
+    if(!v || !sahTglReport(v)) return;
+    var n = (c.get(v) || 0) + 1;
+    c.set(v, n);
+    if(n > bn){ bn = n; best = v; }
+  }
+  rows.forEach(function(r){
+    if(/^[0-9]{6}$/.test(r.folder)) tambah(r.folder);
+    ((r.name || '').match(/[0-9]+/g) || []).forEach(function(x){
+      if(x.length === 6) tambah(x);
+    });
+  });
+  return best;
+}
+
 function ringkasanTeks(){
   var L = [], i;
   function t(x){ L.push(x === undefined ? '' : x); }
@@ -2237,7 +2272,10 @@ function ringkasanTeks(){
   var dobel  = rows.filter(function(r){
     return lebihDobel(r.dupPtr) || lebihDobel(r.dupProd); });
 
+  var tglR = tglReport();
   t('RINGKASAN COMPARE PTR vs PRODUCTION');
+  if(tglR) t('Tanggal report: ' + tglR.slice(4, 6) + '/' + tglR.slice(2, 4)
+             + '/20' + tglR.slice(0, 2) + '  (' + tglR + ')');
   t('Dibuat        : ' + capTgl(new Date()));
   t('Alat          : Compare Report PTR vs Prod v' + APP_VERSION);
   t();
@@ -2322,15 +2360,20 @@ function ringkasanTeks(){
   t(garis('='));
   t('B. COCOK DENGAN CATATAN (' + nf(lunak.length) + ')');
   t(garis('='));
-  if(!lunak.length) t('Tidak ada.');
-  var byReason = {};
-  lunak.forEach(function(r){
-    (byReason[r.softReason] = byReason[r.softReason] || []).push(r); });
-  Object.keys(byReason).forEach(function(k){
+  if(!lunak.length){
+    t('Tidak ada.');
+  } else {
+    /* tidak perlu ditindaklanjuti, jadi cukup jumlahnya - nama file tidak didaftar */
+    t('Isi transaksinya sama. Yang berbeda hanya hal di bawah ini, dan tidak');
+    t('perlu ditindaklanjuti, jadi nama filenya tidak didaftar.');
     t();
-    t(SOFT_LABEL[k].toUpperCase() + ' (' + nf(byReason[k].length) + ')');
-    byReason[k].forEach(function(r){ t('  ' + r.folder + '/' + r.name); });
-  });
+    var byReason = {};
+    lunak.forEach(function(r){
+      byReason[r.softReason] = (byReason[r.softReason] || 0) + 1; });
+    Object.keys(byReason).forEach(function(k){
+      t('  ' + pad(SOFT_LABEL[k], 26) + nf(byReason[k]) + ' file');
+    });
+  }
 
   /* --------------------------------------------------- C. transaksi dobel */
   t();
@@ -2410,8 +2453,9 @@ document.getElementById('sumtxt').onclick = function(){
   btn.disabled = true; btn.textContent = 'Menyiapkan...';
   try {
     var teks = ringkasanTeks();
+    var tglR = tglReport();
     saveBlob(new Blob([teks], {type: 'text/plain;charset=utf-8'}),
-             'ringkasan-ptr-vs-prod.txt');
+             'ringkasan-ptr-vs-prod' + (tglR ? '-20' + tglR : '') + '.txt');
     btn.textContent = label;
   } catch(err){
     btn.textContent = 'Gagal: ' + err;

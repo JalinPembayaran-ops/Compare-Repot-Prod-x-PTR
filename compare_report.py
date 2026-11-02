@@ -1148,8 +1148,19 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '3.0';
+var APP_VERSION = '3.2';
 var CHANGELOG = [
+  ['3.2', '02 Nov 2026', [
+    'Nama berkas ringkasan memakai tanggal report, misalnya ringkasan-ptr-vs-prod-20261031.txt. '
+      + 'Tanggalnya diambil dari nama folder kalau berupa YYMMDD, kalau tidak dari nama '
+      + 'berkas - yang paling sering muncul yang dipakai.',
+    'Tanggal report ikut dicantumkan di kepala ringkasan.'
+  ]],
+  ['3.1', '02 Nov 2026', [
+    'Di ringkasan .txt, bagian Cocok Dengan Catatan cukup menyebut jumlah file per '
+      + 'alasan. Nama filenya tidak lagi didaftar karena tidak perlu ditindaklanjuti, '
+      + 'sehingga ringkasannya jauh lebih pendek dan yang penting lebih menonjol.'
+  ]],
   ['3.0', '02 Nov 2026', [
     'Tombol Unduh Excel dan Unduh Ringkasan diberi warna penuh - hijau dan biru - '
       + 'supaya tidak terlewat. Sebelumnya keduanya bergaya samar.'

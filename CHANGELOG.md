@@ -7,6 +7,21 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 3.2 — 02 November 2026
+
+- Nama berkas ringkasan memakai **tanggal report**, misalnya
+  `ringkasan-ptr-vs-prod-20261031.txt`. Tanggalnya diambil dari nama folder
+  kalau berupa `YYMMDD`, kalau tidak dari nama berkas — yang paling sering
+  muncul yang dipakai.
+- Tanggal report ikut dicantumkan di kepala ringkasan.
+
+## 3.1 — 02 November 2026
+
+- Di ringkasan `.txt`, bagian **Cocok Dengan Catatan** cukup menyebut jumlah
+  file per alasan. Nama filenya tidak lagi didaftar karena tidak perlu
+  ditindaklanjuti, sehingga ringkasannya jauh lebih pendek dan yang benar-benar
+  perlu ditindaklanjuti jadi lebih menonjol.
+
 ## 3.0 — 02 November 2026
 
 - Tombol **Unduh Excel** dan **Unduh Ringkasan** diberi warna penuh — hijau
