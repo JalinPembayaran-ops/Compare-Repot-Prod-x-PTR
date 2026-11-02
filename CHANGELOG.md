@@ -7,6 +7,33 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 2.7 — 02 November 2026
+
+- Pelonggaran jarak spasi dan besar-kecil huruf **dipersempit ke baris
+  keterangan saja** — judul, header, penutup. **Baris transaksi harus tetap
+  sama persis.**
+- Sebuah baris dihitung baris keterangan kalau memang dikenali sebagai
+  keterangan (`HAL :`, `KODE REPORT :`, `TANGGAL :` dan sejenisnya), atau
+  kalau baris kalimat itu tidak punya dua kolom angka atau lebih. Baris
+  bertabel angka selalu dibandingkan apa adanya.
+- Gunanya menutup celah: nilai yang pindah kolom pada baris transaksi tidak
+  bisa lagi tersamar sebagai beda spasi.
+
+## 2.6 — 02 November 2026
+
+- **Beda jarak spasi** antar kolom dan **beda besar-kecil huruf** dihitung
+  cocok, dengan sebutan sendiri: *beda jarak spasi/huruf*. Judul yang digeser
+  ke tengah dengan lebar berbeda (`LAPORAN REVENUE SHARING UNTUK JALIN`) dan
+  kata seperti `ALLO Bank` lawan `ALLO BANK` bukan beda data. Terlihat pada
+  `ALB-Report-Revenue-Sharing-Jalin-MP-2610.txt`.
+- Syaratnya ketat: setelah spasi dirapatkan dan huruf disamakan, barisnya
+  harus **sama persis**. Tiap angka, tanda baca dan urutan kata tetap harus
+  sama, jadi tidak ada nominal yang bisa tersembunyi di balik aturan ini.
+  Baris yang sekalian bertukar posisi juga ikut tercakup.
+- Sebutan ini **tidak dilebur** ke "cocok" begitu saja — jumlahnya disebut di
+  banner ringkasan dan ditandai di kolom File, sama seperti beda jam cetak,
+  supaya tetap bisa ditelusuri.
+
 ## 2.5 — 30 Oktober 2026
 
 - **Beda posisi baris kini berlaku di semua jenis report.** Sebelumnya aturan

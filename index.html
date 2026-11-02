@@ -277,7 +277,7 @@ var SAMPLE_POS = 25, SAMPLE_UNIQ = 15, LINE_TRUNC = 400;
 /* Beda urutan baris, beda jam cetak dan beda format baris dihitung cocok;
    label ini dipakai banner ringkasan maupun tabel rincian. */
 var SOFT_LABEL = {posisi:'beda posisi baris', jam:'beda jam cetak',
-                  format:'beda format baris',
+                  format:'beda format baris', spasi:'beda jarak spasi/huruf',
                   generate:'beda jam generate report'};
 var SM = {
   IDENTIK:['Cocok','ok'],
@@ -749,8 +749,23 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.5';
+var APP_VERSION = '2.7';
 var CHANGELOG = [
+  ['2.7', '02 Nov 2026', [
+    'Pelonggaran jarak spasi dan besar-kecil huruf dipersempit ke baris keterangan saja - '
+      + 'judul, header, penutup. Baris transaksi harus tetap sama persis.',
+    'Baris yang punya dua kolom angka atau lebih dianggap baris transaksi dan selalu '
+      + 'dibandingkan apa adanya, supaya nilai yang pindah kolom tidak bisa tersamar '
+      + 'sebagai beda spasi.'
+  ]],
+  ['2.6', '02 Nov 2026', [
+    'Beda jarak spasi antar kolom dan beda besar-kecil huruf dihitung cocok, dengan '
+      + 'sebutan sendiri: beda jarak spasi/huruf. Judul yang digeser ke tengah dengan '
+      + 'lebar berbeda, dan ALLO Bank lawan ALLO BANK, bukan beda data.',
+    'Syaratnya ketat: setelah spasi dirapatkan dan huruf disamakan, barisnya harus '
+      + 'sama persis. Tiap angka, tanda baca dan urutan kata tetap harus sama, jadi '
+      + 'tidak ada nominal yang bisa tersembunyi di balik aturan ini.'
+  ]],
   ['2.5', '30 Okt 2026', [
     'Beda posisi baris kini berlaku di semua jenis report. Sebelumnya aturan ini hanya '
       + 'jalan pada report yang punya kolom nomor urut; report tanpa kolom itu tidak pernah '
@@ -894,6 +909,47 @@ function datesOf(line){
   var tok = line.match(RE_TOKEN) || [], out = [], i, d;
   for(i = 0; i < tok.length; i++){ d = normDate(tok[i]); if(d) out.push(d); }
   return out;
+}
+
+/* ============ beda jarak spasi / besar-kecil huruf ============
+   Judul yang digeser ke tengah dengan lebar berbeda, dan kata seperti
+   "ALLO Bank" lawan "ALLO BANK", bukan beda data. Syaratnya ketat: setelah
+   jarak spasi dirapatkan dan huruf disamakan, barisnya harus sama persis,
+   jadi tiap angka, tanda baca dan urutan katanya tetap harus sama. */
+function rapat(l){ return l.replace(/\s+/g, ' ').replace(/^ | $/g, ''); }
+
+/* Baris transaksi harus sama persis. Yang boleh berbeda jarak spasi atau
+   besar-kecil hurufnya hanya baris keterangan: baris yang memang dikenali
+   sebagai keterangan, atau baris kalimat yang tidak punya dua kolom angka
+   atau lebih. Baris bertabel angka selalu dibandingkan apa adanya. */
+function kolomAngka(l){
+  var t = rapat(l).split(' '), n = 0, i;
+  for(i = 0; i < t.length; i++) if(/[0-9]/.test(t[i])) n++;
+  return n;
+}
+
+function bolehLonggar(l){ return isMeta(l) || kolomAngka(l) < 2; }
+
+function kunciKosmetik(l){
+  return bolehLonggar(l) ? rapat(l).toUpperCase() : l;
+}
+
+function kosmetikSama(la, lb){
+  if(la.length !== lb.length) return false;
+  var ra = [], rb = [], i, sama = true;
+  for(i = 0; i < la.length; i++) ra.push(kunciKosmetik(la[i]));
+  for(i = 0; i < lb.length; i++) rb.push(kunciKosmetik(lb[i]));
+  for(i = 0; i < ra.length; i++) if(ra[i] !== rb[i]){ sama = false; break; }
+  if(sama) return 'urut';
+
+  /* barisnya juga boleh sekalian bertukar posisi */
+  var ca = new Map(), cb = new Map(), k;
+  for(i = 0; i < ra.length; i++){ ca.set(ra[i], (ca.get(ra[i])||0)+1); }
+  for(i = 0; i < rb.length; i++){ cb.set(rb[i], (cb.get(rb[i])||0)+1); }
+  if(ca.size !== cb.size) return false;
+  var cocok = true;
+  ca.forEach(function(v, k2){ if(cb.get(k2) !== v) cocok = false; });
+  return cocok ? 'posisi' : false;
 }
 
 /* ================= beda posisi baris =================
@@ -1134,6 +1190,17 @@ function analyseText(row, ta, tb, trim){
     row.status = 'IDENTIK';
     row.softReason = 'format';
     row.note = 'Isi report cocok. Beda hanya pada spasi di akhir baris atau akhiran baris (CRLF vs LF).';
+    return;
+  }
+
+  var kos = kosmetikSama(la, lb);
+  if(kos){
+    row.status = 'IDENTIK';
+    row.softReason = 'spasi';
+    row.note = 'Isi report cocok. Yang berbeda hanya jarak spasi antar kolom atau '
+             + 'besar-kecil huruf'
+             + (kos === 'posisi' ? ', dan posisi barisnya.' : '.')
+             + ' Seluruh angka, tanda baca dan urutan katanya sama persis.';
     return;
   }
 

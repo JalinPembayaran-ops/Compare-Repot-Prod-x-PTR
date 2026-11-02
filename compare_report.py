@@ -400,6 +400,45 @@ def dates_of(line):
     return [d for d in (norm_date(t) for t in RE_TOKEN.findall(line)) if d]
 
 
+RE_RAPAT = re.compile(r'\s+')
+
+
+def rapat(l):
+    return RE_RAPAT.sub(' ', l).strip()
+
+
+def kolom_angka(l):
+    return sum(1 for t in rapat(l).split(' ') if any(c.isdigit() for c in t))
+
+
+def boleh_longgar(l):
+    """Baris keterangan - judul, header, penutup - boleh beda jarak spasi atau
+    besar-kecil huruf. Baris bertabel angka dua kolom atau lebih dianggap
+    baris transaksi dan selalu dibandingkan apa adanya."""
+    return is_meta(l) or kolom_angka(l) < 2
+
+
+def kunci_kosmetik(l):
+    return rapat(l).upper() if boleh_longgar(l) else l
+
+
+def kosmetik_sama(la, lb):
+    """Sama kalau yang berbeda cuma jarak spasi atau besar-kecil huruf pada
+    baris keterangan.
+
+    Baris transaksi harus sama persis. Angka, tanda baca dan urutan kata tetap
+    harus sama, jadi tidak ada nominal yang bisa tersembunyi. Mengembalikan
+    'urut' kalau posisinya juga sama, 'posisi' kalau barisnya sekalian
+    bertukar tempat, atau None."""
+    if len(la) != len(lb):
+        return None
+    ra = [kunci_kosmetik(l) for l in la]
+    rb = [kunci_kosmetik(l) for l in lb]
+    if ra == rb:
+        return 'urut'
+    return 'posisi' if Counter(ra) == Counter(rb) else None
+
+
 RE_SEQ = re.compile(r'^\s*(\d+)\s+')
 
 
@@ -602,6 +641,16 @@ def analyse(rel, a, b):
         r['softReason'] = 'format'
         r['note'] = ('Isi report cocok. Beda hanya pada spasi di akhir baris '
                      'atau akhiran baris (CRLF vs LF).')
+        return r
+
+    kos = kosmetik_sama(la, lb)
+    if kos:
+        r['status'] = 'IDENTIK'
+        r['softReason'] = 'spasi'
+        r['note'] = ('Isi report cocok. Yang berbeda hanya jarak spasi antar kolom '
+                     'atau besar-kecil huruf' +
+                     (', dan posisi barisnya.' if kos == 'posisi' else '.') +
+                     ' Seluruh angka, tanda baca dan urutan katanya sama persis.')
         return r
 
     ca, cb = Counter(la), Counter(lb)
@@ -841,7 +890,7 @@ var lastFiles = {ptr: meta.filesPtr || [], prod: meta.filesProd || []};
 /* Beda urutan baris, beda jam cetak dan beda format baris dihitung cocok;
    label ini dipakai banner ringkasan maupun tabel rincian. */
 var SOFT_LABEL = {posisi:'beda posisi baris', jam:'beda jam cetak',
-                  format:'beda format baris',
+                  format:'beda format baris', spasi:'beda jarak spasi/huruf',
                   generate:'beda jam generate report'};
 var SM = {
   IDENTIK:['Cocok','ok'],
@@ -1062,8 +1111,23 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.5';
+var APP_VERSION = '2.7';
 var CHANGELOG = [
+  ['2.7', '02 Nov 2026', [
+    'Pelonggaran jarak spasi dan besar-kecil huruf dipersempit ke baris keterangan saja - '
+      + 'judul, header, penutup. Baris transaksi harus tetap sama persis.',
+    'Baris yang punya dua kolom angka atau lebih dianggap baris transaksi dan selalu '
+      + 'dibandingkan apa adanya, supaya nilai yang pindah kolom tidak bisa tersamar '
+      + 'sebagai beda spasi.'
+  ]],
+  ['2.6', '02 Nov 2026', [
+    'Beda jarak spasi antar kolom dan beda besar-kecil huruf dihitung cocok, dengan '
+      + 'sebutan sendiri: beda jarak spasi/huruf. Judul yang digeser ke tengah dengan '
+      + 'lebar berbeda, dan ALLO Bank lawan ALLO BANK, bukan beda data.',
+    'Syaratnya ketat: setelah spasi dirapatkan dan huruf disamakan, barisnya harus '
+      + 'sama persis. Tiap angka, tanda baca dan urutan kata tetap harus sama, jadi '
+      + 'tidak ada nominal yang bisa tersembunyi di balik aturan ini.'
+  ]],
   ['2.5', '30 Okt 2026', [
     'Beda posisi baris kini berlaku di semua jenis report. Sebelumnya aturan ini hanya '
       + 'jalan pada report yang punya kolom nomor urut; report tanpa kolom itu tidak pernah '
