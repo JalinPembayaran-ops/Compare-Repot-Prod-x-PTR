@@ -7,6 +7,16 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 2.8 — 02 November 2026
+
+- Pemeriksaan jarak spasi/huruf **dipindah ke belakang** pemeriksaan beda
+  posisi baris. Sebelumnya ia jalan lebih dulu, sehingga 40 berkas yang
+  sebenarnya cuma bertukar posisi ikut berlabel *beda jarak spasi/huruf*.
+  Vonisnya benar — sama-sama cocok — tapi sebutannya menyesatkan.
+- Sekarang tiap berkas memakai sebutan yang paling tepat: yang cuma bertukar
+  posisi tetap *beda posisi baris*, dan *beda jarak spasi/huruf* hanya dipakai
+  kalau memang itu persoalannya.
+
 ## 2.7 — 02 November 2026
 
 - Pelonggaran jarak spasi dan besar-kecil huruf **dipersempit ke baris

@@ -749,8 +749,13 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.7';
+var APP_VERSION = '2.8';
 var CHANGELOG = [
+  ['2.8', '02 Nov 2026', [
+    'Pemeriksaan jarak spasi/huruf dipindah ke belakang pemeriksaan beda posisi baris. '
+      + 'Sebelumnya berkas yang sebenarnya cuma bertukar posisi ikut berlabel beda jarak '
+      + 'spasi/huruf - vonisnya benar, tapi sebutannya menyesatkan.'
+  ]],
   ['2.7', '02 Nov 2026', [
     'Pelonggaran jarak spasi dan besar-kecil huruf dipersempit ke baris keterangan saja - '
       + 'judul, header, penutup. Baris transaksi harus tetap sama persis.',
@@ -1193,17 +1198,6 @@ function analyseText(row, ta, tb, trim){
     return;
   }
 
-  var kos = kosmetikSama(la, lb);
-  if(kos){
-    row.status = 'IDENTIK';
-    row.softReason = 'spasi';
-    row.note = 'Isi report cocok. Yang berbeda hanya jarak spasi antar kolom atau '
-             + 'besar-kecil huruf'
-             + (kos === 'posisi' ? ', dan posisi barisnya.' : '.')
-             + ' Seluruh angka, tanda baca dan urutan katanya sama persis.';
-    return;
-  }
-
   var ca = new Map(), cb = new Map();
   for(i=0;i<la.length;i++) ca.set(la[i], (ca.get(la[i])||0)+1);
   for(i=0;i<lb.length;i++) cb.set(lb[i], (cb.get(lb[i])||0)+1);
@@ -1220,6 +1214,17 @@ function analyseText(row, ta, tb, trim){
     row.softReason = 'posisi';
     row.note = 'Isi report cocok. Seluruh baris sama persis, hanya urutan barisnya '
       + 'yang berbeda (' + nf(shifted) + ' posisi bergeser).';
+    return;
+  }
+
+  var kos = kosmetikSama(la, lb);
+  if(kos){
+    row.status = 'IDENTIK';
+    row.softReason = 'spasi';
+    row.note = 'Isi report cocok. Yang berbeda hanya jarak spasi antar kolom atau '
+             + 'besar-kecil huruf'
+             + (kos === 'posisi' ? ', dan posisi barisnya.' : '.')
+             + ' Seluruh angka, tanda baca dan urutan katanya sama persis.';
     return;
   }
 

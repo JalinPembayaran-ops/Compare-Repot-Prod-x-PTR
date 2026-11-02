@@ -643,16 +643,6 @@ def analyse(rel, a, b):
                      'atau akhiran baris (CRLF vs LF).')
         return r
 
-    kos = kosmetik_sama(la, lb)
-    if kos:
-        r['status'] = 'IDENTIK'
-        r['softReason'] = 'spasi'
-        r['note'] = ('Isi report cocok. Yang berbeda hanya jarak spasi antar kolom '
-                     'atau besar-kecil huruf' +
-                     (', dan posisi barisnya.' if kos == 'posisi' else '.') +
-                     ' Seluruh angka, tanda baca dan urutan katanya sama persis.')
-        return r
-
     ca, cb = Counter(la), Counter(lb)
     only_a, only_b = ca - cb, cb - ca
     r['onlyPtrRows'] = sum(only_a.values())
@@ -665,6 +655,16 @@ def analyse(rel, a, b):
         r['softReason'] = 'posisi'
         r['note'] = ('Isi report cocok. Seluruh baris sama persis, hanya urutan '
                      'barisnya yang berbeda (%d posisi bergeser).' % shifted)
+        return r
+
+    kos = kosmetik_sama(la, lb)
+    if kos:
+        r['status'] = 'IDENTIK'
+        r['softReason'] = 'spasi'
+        r['note'] = ('Isi report cocok. Yang berbeda hanya jarak spasi antar kolom '
+                     'atau besar-kecil huruf' +
+                     (', dan posisi barisnya.' if kos == 'posisi' else '.') +
+                     ' Seluruh angka, tanda baca dan urutan katanya sama persis.')
         return r
 
     code_rows(r, la, lb, only_a, only_b, sa, sb, A[2], B[2])
@@ -1111,8 +1111,13 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '2.7';
+var APP_VERSION = '2.8';
 var CHANGELOG = [
+  ['2.8', '02 Nov 2026', [
+    'Pemeriksaan jarak spasi/huruf dipindah ke belakang pemeriksaan beda posisi baris. '
+      + 'Sebelumnya berkas yang sebenarnya cuma bertukar posisi ikut berlabel beda jarak '
+      + 'spasi/huruf - vonisnya benar, tapi sebutannya menyesatkan.'
+  ]],
   ['2.7', '02 Nov 2026', [
     'Pelonggaran jarak spasi dan besar-kecil huruf dipersempit ke baris keterangan saja - '
       + 'judul, header, penutup. Baris transaksi harus tetap sama persis.',
