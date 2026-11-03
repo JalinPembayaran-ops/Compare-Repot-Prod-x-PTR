@@ -58,6 +58,10 @@ h3.sec{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--
 .btn.dl:hover{background:var(--ok);border-color:var(--ok);color:#fff;opacity:.88}
 .btn.dl.biru{background:var(--ptr);border-color:var(--ptr)}
 .btn.dl.biru:hover{background:var(--ptr);border-color:var(--ptr)}
+/* tombol unduh duduk di ujung kanan baris filter Rincian per file */
+.filterbar{margin:0 0 12px}
+.chipbar{flex:1 1 auto;margin:0}
+.filterbar #csv{margin-left:auto}
 .zstat{margin-top:11px;font-size:12.5px;color:var(--tx2);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .zstat b{color:var(--tx)}
 .filelist{margin-top:9px;max-height:132px;overflow:auto;border:1px solid var(--line);
@@ -231,8 +235,6 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
       </select>
     </label>
     <label class="opt"><input type="checkbox" id="optTrim" checked> Abaikan spasi di akhir baris</label>
-    <button class="btn ghost dl" id="csv" hidden>Unduh Ringkasan Excel</button>
-    <button class="btn ghost dl biru" id="sumtxt" hidden>Unduh Ringkasan Txt</button>
   </div>
 
   <div class="progress" id="prog">
@@ -252,7 +254,11 @@ footer{margin-top:34px;color:var(--tx3);font-size:11.5px;text-align:center}
     <div class="card tbl-scroll"><table id="byFolder"></table></div>
 
     <h3 class="sec">Rincian per file</h3>
-    <div class="ctrls" id="filters"></div>
+    <div class="ctrls filterbar">
+      <div class="ctrls chipbar" id="filters"></div>
+      <button class="btn ghost dl" id="csv" hidden>Unduh Ringkasan Excel</button>
+      <button class="btn ghost dl biru" id="sumtxt" hidden>Unduh Ringkasan Txt</button>
+    </div>
     <div class="ctrls">
       <input type="search" id="q" placeholder="Cari nama file / kode bank (mis. BRI)">
       <select id="folderSel"></select>
@@ -756,8 +762,13 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '3.4';
+var APP_VERSION = '3.5';
 var CHANGELOG = [
+  ['3.5', '03 Nov 2026', [
+    'Tombol Unduh Ringkasan Excel dan Txt dipindah ke ujung kanan baris filter '
+      + 'Rincian per file, sebaris dengan Semua / Beda data / Hanya di PTR. Sebelumnya '
+      + 'keduanya menempel di baris pengaturan, jauh di atas hasil.'
+  ]],
   ['3.4', '02 Nov 2026', [
     'Nama tombol diperjelas: Unduh Ringkasan Excel dan Unduh Ringkasan Txt, supaya '
       + 'keduanya jelas sama-sama ringkasan seluruh hasil, hanya beda bentuk berkasnya. '

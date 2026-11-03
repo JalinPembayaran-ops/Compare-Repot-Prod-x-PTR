@@ -7,6 +7,14 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 3.5 — 03 November 2026
+
+- Tombol **Unduh Ringkasan Excel** dan **Txt** dipindah ke ujung kanan baris
+  filter *Rincian per file* — sebaris dengan Semua / Beda data / Hanya di PTR,
+  mengisi ruang yang memang menganggur di sana. Sebelumnya keduanya menempel
+  di baris pengaturan, jauh di atas hasil.
+- Di layar sempit keduanya turun ke barisnya sendiri, tidak meluber.
+
 ## 3.4 — 02 November 2026
 
 - Nama tombol diperjelas: **Unduh Ringkasan Excel** dan **Unduh Ringkasan
