@@ -7,6 +7,14 @@ riwayat ini langsung dari dalam alatnya.
 > baris pada `CHANGELOG` di dalam `index.html` dan `compare_report.py`, lalu
 > catat juga di berkas ini.
 
+## 3.6 — 06 November 2026
+
+- Jenis report `XXX-Summary-Revenue-Sharing-JALIN-MP-YYMMDD.txt` ditambahkan
+  ke daftar kelengkapan. Daftar kini **43 jenis**.
+- Diperiksa agar tidak bentrok dengan
+  `XXX-Report-Revenue-Sharing-Jalin-MP-YYMMDD` yang namanya mirip: keduanya
+  jatuh ke barisnya masing-masing.
+
 ## 3.5 — 03 November 2026
 
 - Tombol **Unduh Ringkasan Excel** dan **Txt** dipindah ke ujung kanan baris

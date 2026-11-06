@@ -704,6 +704,7 @@ var REPORT_TYPES = [
   'NET_SETTLE_ARTA_YYMMDD.xls',
   'NET_SETTLE_RNTS_YYMMDD.xlsx',
   'XXX-Report-Revenue-Sharing-Jalin-MP-BNF-YYMMDD',
+  'XXX-Summary-Revenue-Sharing-JALIN-MP-YYMMDD.txt',
   'BTN-Report-Harian-LINK-MP-YYMMDD',
   'BTN-Transaction-Data-MP-YYMMDD',
   'BTN-Transfer-Incomplete-MP-YYMMDD',
@@ -762,8 +763,12 @@ function checkTypes(namesPtr, namesProd){
 /* ============================ versi dan riwayat perubahan ============================
    Naikkan APP_VERSION dan tambahkan satu baris di CHANGELOG setiap ada
    penambahan atau perubahan, supaya pemakai tahu versi berapa yang dipegang. */
-var APP_VERSION = '3.5';
+var APP_VERSION = '3.6';
 var CHANGELOG = [
+  ['3.6', '06 Nov 2026', [
+    'Jenis report XXX-Summary-Revenue-Sharing-JALIN-MP-YYMMDD.txt ditambahkan ke daftar '
+      + 'kelengkapan. Daftar kini 43 jenis.'
+  ]],
   ['3.5', '03 Nov 2026', [
     'Tombol Unduh Ringkasan Excel dan Txt dipindah ke ujung kanan baris filter '
       + 'Rincian per file, sebaris dengan Semua / Beda data / Hanya di PTR. Sebelumnya '
